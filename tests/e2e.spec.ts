@@ -3,6 +3,13 @@ import { expect, test } from '@playwright/test'
 test('landing, login and guarded teacher dashboard work', async ({ page }, testInfo) => {
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /Учись глубже/ })).toBeVisible()
+  const videos = page.locator('.seamless-video video')
+  await expect(videos).toHaveCount(2)
+  await expect(videos.nth(0)).not.toHaveAttribute('loop', '')
+  await expect(page.getByRole('heading', { name: /Расписание, задания/ })).toBeVisible()
+  await expect(page.locator('.feature-grid')).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
+  await page.screenshot({ path: `output/playwright/landing-${testInfo.project.name}.png`, fullPage: true, animations: 'disabled' })
   await page.getByRole('link', { name: 'Войти', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'С возвращением.' })).toBeVisible()
   await page.getByRole('button', { name: 'Демо преподавателя' }).click()

@@ -1,9 +1,6 @@
 import {
   ArrowRight,
-  CalendarDays,
-  CheckCircle2,
   ChevronRight,
-  Clock3,
   LockKeyhole,
 } from "lucide-react";
 import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
@@ -11,6 +8,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { gsap } from "gsap";
 import { currentRole, signInWithUsername } from "./lib/auth";
 import { supabase } from "./lib/supabase";
+import { SeamlessBackgroundVideo } from "./SeamlessBackgroundVideo";
+import { ProductShowcases } from "./ProductShowcases";
 import "./App.css";
 import {
   CalendarPage,
@@ -32,6 +31,13 @@ const video =
 
 function Landing() {
   const root = useRef<HTMLElement>(null);
+  const scrollToSection = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    const target=document.querySelector(event.currentTarget.hash);
+    if(!target)return;
+    event.preventDefault();
+    target.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+    history.replaceState(null,"",event.currentTarget.hash);
+  };
   useEffect(() => {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches || !root.current)
       return;
@@ -55,24 +61,15 @@ function Landing() {
   }, []);
   return (
     <main className="landing" id="top" ref={root}>
-      <video
-        className="hero-video"
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-      >
-        <source src={video} type="video/mp4" />
-      </video>
+      <SeamlessBackgroundVideo src={video} crossfadeDuration={1.2} className="hero-video" />
       <nav className="nav">
         <Link className="logo" to="/">
           Eclipse<sup>®</sup>
         </Link>
         <div className="nav-links">
-          <a href="#top">Главная</a>
-          <a href="#features">Возможности</a>
-          <a href="#about">О платформе</a>
+          <a href="#top" onClick={scrollToSection}>Главная</a>
+          <a href="#features" onClick={scrollToSection}>Возможности</a>
+          <a href="#about" onClick={scrollToSection}>О платформе</a>
           <Link className="login-link" to="/login">
             Войти <ArrowRight size={15} />
           </Link>
@@ -99,29 +96,7 @@ function Landing() {
           Листайте вниз <ChevronRight size={15} />
         </span>
       </div>
-      <section id="features" className="features">
-        <p className="eyebrow">Всё важное - на своём месте</p>
-        <div className="feature-grid">
-          <article>
-            <CalendarDays />
-            <h2>Ритм занятий</h2>
-            <p>Расписание, ссылки на уроки и напоминания без лишних чатов.</p>
-          </article>
-          <article>
-            <CheckCircle2 />
-            <h2>Ясные задания</h2>
-            <p>
-              Тесты проверяются сразу, а рукописные решения легко отправить с
-              телефона.
-            </p>
-          </article>
-          <article>
-            <Clock3 />
-            <h2>Заметный прогресс</h2>
-            <p>Результаты и темы складываются в понятную картину роста.</p>
-          </article>
-        </div>
-      </section>
+      <ProductShowcases />
       <footer id="about">
         <span className="logo">
           Eclipse<sup>®</sup>

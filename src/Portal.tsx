@@ -21,14 +21,11 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import {
-  assignmentStatus,
-  isAcceptedAnswer,
-  scoreAttempt,
-} from "./lib/homework";
+import { isAcceptedAnswer } from "./lib/homework";
 import { supabase } from "./lib/supabase";
 import { usernameSchema } from "./lib/schemas";
-import { demoStudents, saveTeacherNote, useStudents } from "./lib/data";
+import { createHomework, demoStudents, markAllNotificationsRead, saveAttemptDraft, saveTeacherNote, submitAttempt, useAssignment, useAssignments, useLessons, useNotifications, useStudents } from "./lib/data";
+import { useQueryClient } from "@tanstack/react-query";
 
 const AnalyticsChart = lazy(() => import("./AnalyticsChart"));
 const CalendarBoard = lazy(() => import("./CalendarBoard"));
@@ -144,11 +141,19 @@ const Metric = ({
   </article>
 );
 export function TeacherDashboard() {
+  const { data: students = [] } = useStudents();
+  const { data: assignments = [] } = useAssignments();
+  const { data: lessons = [] } = useLessons();
+  const { data: notifications = [] } = useNotifications();
   const today = new Intl.DateTimeFormat("ru-RU", {
     weekday: "long",
     day: "numeric",
     month: "long",
   }).format(new Date()).toLocaleUpperCase("ru-RU");
+  const now = new Date();
+  const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
+  const isDay = (value: string, day: Date) => new Date(value).toDateString() === day.toDateString();
+  const unreadResults = notifications.filter((item) => !item.readAt && item.kind === "result").length;
   return (
     <>
       <PageTitle
@@ -161,35 +166,25 @@ export function TeacherDashboard() {
         }
       />
       <section className="metrics">
-        <Metric value="4" label="Ожидают проверки" tone="warm" />
-        <Metric value="3" label="Не сдали в срок" tone="danger" />
-        <Metric value="2" label="Дедлайн сегодня" tone="warm" />
-        <Metric value="5" label="Дедлайн завтра" />
-        <Metric value="2" label="Занятия сегодня" />
-        <Metric value="6" label="Новых результатов тестов" />
-        <Metric value="5" label="Недавно загруженные фотографии" />
-        <Metric value="1" label="Без ближайшего занятия" tone="danger" />
+        <Metric value={assignments.filter((a) => a.status === "Ожидает проверки").length} label="Ожидают проверки" tone="warm" />
+        <Metric value={assignments.filter((a) => a.status === "Просрочено").length} label="Не сдали в срок" tone="danger" />
+        <Metric value={assignments.filter((a) => isDay(a.deadlineAt, now)).length} label="Дедлайн сегодня" tone="warm" />
+        <Metric value={assignments.filter((a) => isDay(a.deadlineAt, tomorrow)).length} label="Дедлайн завтра" />
+        <Metric value={lessons.filter((lesson) => isDay(lesson.startsAt, now)).length} label="Занятия сегодня" />
+        <Metric value={unreadResults} label="Новых результатов тестов" />
+        <Metric value={notifications.filter((item) => !item.readAt && item.kind === "submission").length} label="Недавно загруженные фотографии" />
+        <Metric value={Math.max(0, students.length - new Set(lessons.map((lesson) => lesson.studentName)).size)} label="Без ближайшего занятия" tone="danger" />
       </section>
       <section className="content-grid">
         <article className="panel attention">
           <PanelHead title="Требует внимания" link="/teacher/review" />
-          <Task
-            title="Максим Орлов не сдал «Обыкновенные дроби»"
-            meta="Дедлайн истёк вчера в 23:59"
-          />
-          <Task
-            title="Анна Волкова загрузила 5 фотографий"
-            meta="Ожидает ручной проверки · 12 минут назад"
-          />
-          <Task
-            title="У Софии нет ближайшего занятия"
-            meta="Расписание не заполнено"
-          />
+          {notifications.filter((item) => !item.readAt).slice(0,3).map((item) => <Task key={item.id} title={item.title} meta={new Date(item.createdAt).toLocaleString("ru-RU")} />)}
+          {!notifications.some((item) => !item.readAt) && <p className="empty-inline">Всё спокойно — новых событий нет.</p>}
         </article>
         <article className="panel">
           <PanelHead title="Сегодня" link="/teacher/calendar" />
-          <Lesson time="16:00" name="Анна Волкова" topic="Линейные уравнения" />
-          <Lesson time="18:00" name="Максим Орлов" topic="Дроби" />
+          {lessons.filter((lesson) => isDay(lesson.startsAt, now)).map((lesson) => <Lesson key={lesson.id} time={new Date(lesson.startsAt).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})} name={lesson.studentName} topic={lesson.status === "moved" ? "Перенесено" : "Математика"} />)}
+          {!lessons.some((lesson) => isDay(lesson.startsAt, now)) && <p className="empty-inline">На сегодня занятий нет.</p>}
         </article>
       </section>
       <StudentsTable />
@@ -460,7 +455,8 @@ function CreateStudent({
 export function StudentDetail() {
   const { studentId = "" } = useParams();
   const { data = demoStudents } = useStudents();
-  const s = data.find((student) => student.id === studentId) ?? data[0] ?? demoStudents[0];
+  const s = data.find((student) => student.id === studentId) ?? data[0];
+  if (!s) return <section className="panel empty">Ученик не найден.</section>;
   return (
     <>
       <PageTitle eyebrow="КАРТОЧКА УЧЕНИКА" title={s.name} />
@@ -515,6 +511,7 @@ function TeacherNotes({ studentId }: { studentId: string }) {
 }
 
 export function HomeworkList({ student = false }: { student?: boolean }) {
+  const {data: assignments = [], isLoading, error} = useAssignments();
   return (
     <>
       <PageTitle
@@ -529,35 +526,10 @@ export function HomeworkList({ student = false }: { student?: boolean }) {
         }
       />
       <section className="homework-list">
-        <HomeworkRow
-          title="Функции и их графики"
-          topic="Функции"
-          due="15 июля, 23:59"
-          status={assignmentStatus({
-            started: true,
-            deadline: "2026-07-15",
-            now: "2026-07-13",
-          })}
-          href={
-            student
-              ? "/student/homework/functions"
-              : "/teacher/homework/functions/edit"
-          }
-        />
-        <HomeworkRow
-          title="Теорема Пифагора · фото-решение"
-          topic="Геометрия"
-          due="18 июля, 20:00"
-          status="Не начато"
-          href={student ? "/student/homework/geometry/photos" : "#"}
-        />
-        <HomeworkRow
-          title="Обыкновенные дроби"
-          topic="Дроби"
-          due="12 июля, 23:59"
-          status="Просрочено"
-          href="#"
-        />
+        {isLoading && <p role="status">Загрузка заданий…</p>}
+        {error && <p className="form-error" role="alert">Не удалось загрузить задания.</p>}
+        {assignments.map((item) => <HomeworkRow key={item.id} title={item.title} topic={item.topic} due={item.deadline} status={item.status} href={student ? (item.mode === "manual" ? `/student/homework/${item.id}/photos` : `/student/homework/${item.id}`) : `/teacher/homework/${item.id}/edit`} />)}
+        {!isLoading && !error && assignments.length === 0 && <section className="panel empty">Заданий пока нет.</section>}
       </section>
     </>
   );
@@ -591,28 +563,39 @@ function HomeworkRow({
 }
 
 export function HomeworkBuilder() {
-  const [mode, setMode] = useState("automatic");
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const {data: students = []} = useStudents();
+  const [mode, setMode] = useState<"automatic"|"manual"|"combined">("automatic");
   const [title, setTitle] = useState("Функции и их графики");
   const [question, setQuestion] = useState(
     "Найдите значение функции y = 2x + 1 при x = 3",
   );
   const [answer, setAnswer] = useState("7");
+  const [deadline, setDeadline] = useState("2026-07-15T23:59");
+  const [attempts, setAttempts] = useState(2);
+  const [studentIds, setStudentIds] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const valid = title.trim() && question.trim() && answer.trim();
   return (
     <>
       <PageTitle eyebrow="НОВОЕ ЗАДАНИЕ" title="Соберите ясный маршрут." />
       <form
         className="builder"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          setSaved(true);
+          setBusy(true);setError("");
+          try { await createHomework({title,mode,question,answer,deadline,attempts,studentIds}); setSaved(true); await queryClient.invalidateQueries({queryKey:["assignments"]}); navigate("/teacher/homework"); }
+          catch (value) { setError(value instanceof Error ? value.message : "Не удалось сохранить задание"); }
+          finally { setBusy(false); }
         }}
       >
         <section className="panel form-panel">
           <fieldset className="assignment-modes">
             <legend>Формат задания</legend>
-            {[["automatic", "Автопроверка"], ["manual", "Фото-решение"], ["combined", "Комбинированное"]].map(([value, label]) => (
+            {([['automatic', 'Автопроверка'], ['manual', 'Фото-решение'], ['combined', 'Комбинированное']] as const).map(([value, label]) => (
               <label key={value}><input type="radio" name="mode" value={value} checked={mode === value} onChange={() => setMode(value)} /> {label}</label>
             ))}
           </fieldset>
@@ -631,11 +614,11 @@ export function HomeworkBuilder() {
             </label>
             <label>
               Срок
-              <input type="datetime-local" defaultValue="2026-07-15T23:59" />
+              <input type="datetime-local" value={deadline} onChange={(e)=>setDeadline(e.target.value)} required />
             </label>
             <label>
               Попыток
-              <input type="number" min="1" defaultValue="2" />
+              <input type="number" min="1" value={attempts} onChange={(e)=>setAttempts(Number(e.target.value))} />
             </label>
           </div>
         </section>
@@ -661,13 +644,21 @@ export function HomeworkBuilder() {
           <p>Ученик сможет загрузить, повернуть, обрезать и упорядочить страницы решения.</p>
           <label>Максимум баллов<input type="number" min="1" defaultValue="5" /></label>
         </section>}
+        <section className="panel form-panel">
+          <h2>Назначить ученикам</h2>
+          <div className="student-checkboxes">
+            {students.map((student)=><label key={student.id}><input type="checkbox" checked={studentIds.includes(student.id)} onChange={(e)=>setStudentIds(e.target.checked?[...studentIds,student.id]:studentIds.filter((id)=>id!==student.id))}/>{student.name}</label>)}
+          </div>
+          {!students.length && <p>Сначала добавьте ученика в разделе «Ученики».</p>}
+        </section>
         {saved && <p className="save-confirmation" role="status">Черновик сохранён. Его можно открыть в предпросмотре.</p>}
+        {error && <p className="form-error" role="alert">{error}</p>}
         <div className="sticky-actions">
           <Link className="button secondary" to="/teacher/homework">
             Отмена
           </Link>
-          <button className="button" disabled={!valid}>
-            <Save size={17} /> Сохранить черновик
+          <button className="button" disabled={!valid || busy || !studentIds.length}>
+            <Save size={17} /> {busy ? "Сохранение…" : "Опубликовать"}
           </button>
           <Link className="button secondary" to="/teacher/homework/functions/preview">Предпросмотр</Link>
         </div>
@@ -678,57 +669,42 @@ export function HomeworkBuilder() {
 
 export function TestAttempt() {
   const location = useLocation();
+  const {assignmentId = "", id = ""} = useParams();
+  const assignmentKey = assignmentId || id || "functions";
   const preview = location.pathname.includes("/teacher/");
   const resultView = location.pathname.includes("/results/");
-  const questions = [
-    {
-      id: "q1",
-      text: "Найдите значение y = 2x + 1 при x = 3",
-      accepted: ["7"],
-    },
-    {
-      id: "q2",
-      text: "Как называется график функции y = x²?",
-      accepted: ["парабола"],
-    },
-  ];
-  const [answers, setAnswers] = useStored<Record<string, string>>(
-    "eclipse-attempt",
-    {},
-  );
+  const {data, isLoading, error} = useAssignment(assignmentKey, !preview && !resultView);
+  const previewQuestions = [{id:"q1",prompt:"Найдите значение y = 2x + 1 при x = 3",position:1},{id:"q2",prompt:"Как называется график функции y = x²?",position:2}];
+  const questions = preview ? previewQuestions : (data?.questions ?? []);
+  const [answers, setAnswers] = useState<Record<string,string>>({});
   const [done, setDone] = useState(resultView);
-  const result = questions.filter((q) =>
-    isAcceptedAnswer(answers[q.id] ?? "", q.accepted),
-  ).length;
+  const [submittedScore,setSubmittedScore]=useState<{score:number;maximum:number}|null>(null);
+  const [submitError,setSubmitError]=useState("");
+  useEffect(()=>{if(data?.draft)setAnswers(data.draft)},[data]);
+  useEffect(()=>{if(preview||resultView||!data)return;const timer=setTimeout(()=>saveAttemptDraft(assignmentKey,answers).catch(()=>undefined),500);return()=>clearTimeout(timer)},[answers,assignmentKey,data,preview,resultView]);
+  const demoResult = (isAcceptedAnswer(answers.q1??"",["7"])?1:0)+(isAcceptedAnswer(answers.q2??"",["парабола"])?1:0);
+  const score = submittedScore ?? {score:demoResult,maximum:questions.length};
+  if(isLoading)return <section className="panel empty" role="status">Загрузка задания…</section>;
+  if(error)return <section className="panel empty form-error" role="alert">Не удалось открыть задание.</section>;
   if (done) {
-    const score = scoreAttempt({
-      automaticCorrect: result,
-      automaticTotal: questions.length,
-      manualPoints: 0,
-      manualMaximum: 0,
-    });
+    const percentage=score.maximum?Math.round(score.score/score.maximum*100):0;
     return (
       <>
         <PageTitle
           eyebrow={preview ? "ПРЕДПРОСМОТР" : "РЕЗУЛЬТАТ"}
-          title={`${score.percentage}% — попытка завершена.`}
+          title={`${percentage}% — попытка завершена.`}
         />
         <section className="panel result">
           <strong>
             {score.score} из {score.maximum}
           </strong>
           <p>
-            Верных ответов: {result}. {preview ? "Так ученик увидит итоговый разбор." : "Можно использовать оставшуюся попытку."}
+            Верных ответов: {score.score}. {preview ? "Так ученик увидит итоговый разбор." : "Результат сохранён в вашем профиле."}
           </p>
           {questions.map((q) => (
             <div className="answer-review" key={q.id}>
-              <b>{q.text}</b>
+              <b>{q.prompt}</b>
               <span>Ваш ответ: {answers[q.id] || "Нет ответа"}</span>
-              {!isAcceptedAnswer(answers[q.id] ?? "", q.accepted) && (
-                <span className="wrong">
-                  Верный ответ: {q.accepted.join(", ")}
-                </span>
-              )}
             </div>
           ))}
         </section>
@@ -737,7 +713,7 @@ export function TestAttempt() {
   }
   return (
     <>
-      <PageTitle eyebrow="ФУНКЦИИ И ГРАФИКИ" title="Решайте внимательно." />
+      <PageTitle eyebrow={(data?.title??"ФУНКЦИИ И ГРАФИКИ").toLocaleUpperCase("ru-RU")} title="Решайте внимательно." />
       <section className="attempt-layout">
         <nav className="question-nav" aria-label="Навигация по вопросам">
           {questions.map((q, i) => (
@@ -756,30 +732,35 @@ export function TestAttempt() {
               <span>
                 Вопрос {i + 1} из {questions.length}
               </span>
-              <h2>{q.text}</h2>
+              <h2>{q.prompt}</h2>
               <label>
                 Ваш ответ
                 <input
                   disabled={preview}
                   inputMode="decimal"
                   value={answers[q.id] ?? ""}
-                  onChange={(e) =>
-                    setAnswers({ ...answers, [q.id]: e.target.value })
-                  }
+                  onChange={(e) => {
+                    const next={...answers,[q.id]:e.target.value};
+                    localStorage.setItem(`eclipse-attempt:${assignmentKey}`,JSON.stringify(next));
+                    setAnswers(next);
+                  }}
                 />
               </label>
             </article>
           ))}
           {!preview && <button
             className="button finish"
-            onClick={() =>
-              confirm(
+            onClick={async () => {
+              if(!confirm(
                 `Вы ответили на ${Object.values(answers).filter(Boolean).length} из ${questions.length} вопросов. После отправки изменить ответы будет нельзя.`,
-              ) && setDone(true)
-            }
+              ))return;
+              setSubmitError("");
+              try{const result=await submitAttempt(assignmentKey,answers);if(result)setSubmittedScore({score:result.score,maximum:result.maximum_score});setDone(true)}catch(value){setSubmitError(value instanceof Error?value.message:"Не удалось отправить попытку")}
+            }}
           >
             Завершить попытку
           </button>}
+          {submitError && <p className="form-error" role="alert">{submitError}</p>}
           {preview && <p className="preview-note" role="note">Режим преподавателя: ответы и отправка отключены.</p>}
         </div>
       </section>
@@ -802,16 +783,17 @@ export function CalendarPage() {
   );
 }
 export function NotificationsPage() {
+  const {data = [], isLoading, error} = useNotifications();
+  const queryClient = useQueryClient();
   return (
     <>
       <PageTitle eyebrow="УВЕДОМЛЕНИЯ" title="Ничего важного не потеряется." />
       <section className="panel notifications">
-        <Task title="Анна загрузила фотографии решения" meta="12 минут назад" />
-        <Task title="Задание «Функции» сдано" meta="Сегодня, 10:42" />
-        <Task
-          title="Урок с Максимом начинается через час"
-          meta="Сегодня, 17:00"
-        />
+        <button className="button secondary mark-read" onClick={async()=>{await markAllNotificationsRead();await queryClient.invalidateQueries({queryKey:["notifications"]})}}>Отметить всё прочитанным</button>
+        {isLoading && <p role="status">Загрузка уведомлений…</p>}
+        {error && <p className="form-error" role="alert">Не удалось загрузить уведомления.</p>}
+        {data.map((item) => <Link key={item.id} to={item.href} className={item.readAt ? "notification-read" : "notification-unread"}><Task title={item.title} meta={new Date(item.createdAt).toLocaleString("ru-RU")} /></Link>)}
+        {!isLoading && data.length === 0 && <p className="empty-inline">Уведомлений пока нет.</p>}
       </section>
     </>
   );

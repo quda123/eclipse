@@ -885,6 +885,13 @@ td {
 .assignment-modes label { display: flex; align-items: center; gap: 8px; }
 .assignment-modes input { width: auto; }
 .save-confirmation, .preview-note { color: #d5c189; font-size: 12px; }
+.student-checkboxes { display: grid; gap: 10px; }
+.student-checkboxes label { display: flex; align-items: center; gap: 10px; }
+.student-checkboxes input { width: auto; }
+.empty-inline { color: #9fb2b8; padding: 18px 0; }
+.mark-read { margin-bottom: 16px; }
+.notification-read { opacity: .58; }
+.notification-unread { display: block; border-left: 2px solid #d5c189; padding-left: 12px; }
 .student-cards,
 .homework-list {
   display: grid;
@@ -1190,6 +1197,7 @@ td {
 }
 @media (max-width: 700px) {
   .student-filters { flex-direction: column; }
+  .sticky-actions { bottom: 86px; flex-wrap: wrap; }
   .portal {
     display: block;
     padding-bottom: 74px;

@@ -200,7 +200,7 @@ function Login() {
         <button className="cta" type="submit" disabled={busy}>
           {busy ? "Входим…" : "Продолжить"} <ArrowRight size={18} />
         </button>
-        <div className="demo-logins">
+        {import.meta.env.DEV && <div className="demo-logins">
           <button
             type="button"
             onClick={() => {
@@ -219,7 +219,7 @@ function Login() {
           >
             Демо ученика
           </button>
-        </div>
+        </div>}
       </form>
     </main>
   );

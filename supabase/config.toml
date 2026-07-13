@@ -1,0 +1,30 @@
+project_id = "eclipse"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+
+[db]
+port = 54322
+major_version = 15
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+enable_signup = false
+
+[storage]
+enabled = true
+file_size_limit = "20MiB"
+
+[functions.create-student]
+verify_jwt = true
+
+[functions.manage-student]
+verify_jwt = true

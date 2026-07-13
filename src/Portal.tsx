@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Bell,
   BookOpenCheck,
@@ -144,10 +144,15 @@ const Metric = ({
   </article>
 );
 export function TeacherDashboard() {
+  const today = new Intl.DateTimeFormat("ru-RU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date()).toLocaleUpperCase("ru-RU");
   return (
     <>
       <PageTitle
-        eyebrow="ВОСКРЕСЕНЬЕ, 13 ИЮЛЯ"
+        eyebrow={today}
         title="Добрый день, Мария."
         action={
           <Link className="button" to="/teacher/homework/new">
@@ -158,8 +163,12 @@ export function TeacherDashboard() {
       <section className="metrics">
         <Metric value="4" label="Ожидают проверки" tone="warm" />
         <Metric value="3" label="Не сдали в срок" tone="danger" />
+        <Metric value="2" label="Дедлайн сегодня" tone="warm" />
+        <Metric value="5" label="Дедлайн завтра" />
         <Metric value="2" label="Занятия сегодня" />
-        <Metric value="6" label="Новых результатов" />
+        <Metric value="6" label="Новых результатов тестов" />
+        <Metric value="5" label="Недавно загруженные фотографии" />
+        <Metric value="1" label="Без ближайшего занятия" tone="danger" />
       </section>
       <section className="content-grid">
         <article className="panel attention">
@@ -230,12 +239,15 @@ function StudentsTable() {
 }
 export function StudentsPage() {
   const [q, setQ] = useState("");
+  const [classFilter, setClassFilter] = useState("Все классы");
   const { data = demoStudents, isLoading, error } = useStudents();
   const [created, setCreated] = useState<typeof demoStudents>([]);
   const students = [...data, ...created];
   const [creating, setCreating] = useState(false);
+  const classes = ["Все классы", ...new Set(students.map((s) => s.className))];
   const shown = students.filter((s) =>
-    s.name.toLowerCase().includes(q.toLowerCase()),
+    s.name.toLowerCase().includes(q.toLowerCase()) &&
+    (classFilter === "Все классы" || s.className === classFilter),
   );
   return (
     <>
@@ -248,13 +260,18 @@ export function StudentsPage() {
           </button>
         }
       />
-      <input
-        className="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Найти ученика"
-        aria-label="Найти ученика"
-      />
+      <div className="student-filters">
+        <input
+          className="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Найти ученика"
+          aria-label="Найти ученика"
+        />
+        <select aria-label="Фильтр по классу" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}>
+          {classes.map((className) => <option key={className}>{className}</option>)}
+        </select>
+      </div>
       {isLoading && <p role="status">Загрузка учеников…</p>}
       {error && <p className="form-error" role="alert">Не удалось загрузить учеников</p>}
       <section className="student-cards">
@@ -279,6 +296,7 @@ export function StudentsPage() {
           </Link>
         ))}
       </section>
+      {!isLoading && shown.length === 0 && <section className="panel empty">Ученики не найдены. Измените поиск или фильтр.</section>}
       {creating && (
         <CreateStudent
           onClose={() => setCreating(false)}
@@ -573,11 +591,13 @@ function HomeworkRow({
 }
 
 export function HomeworkBuilder() {
+  const [mode, setMode] = useState("automatic");
   const [title, setTitle] = useState("Функции и их графики");
   const [question, setQuestion] = useState(
     "Найдите значение функции y = 2x + 1 при x = 3",
   );
   const [answer, setAnswer] = useState("7");
+  const [saved, setSaved] = useState(false);
   const valid = title.trim() && question.trim() && answer.trim();
   return (
     <>
@@ -586,10 +606,16 @@ export function HomeworkBuilder() {
         className="builder"
         onSubmit={(e) => {
           e.preventDefault();
-          alert("Черновик сохранён");
+          setSaved(true);
         }}
       >
         <section className="panel form-panel">
+          <fieldset className="assignment-modes">
+            <legend>Формат задания</legend>
+            {[["automatic", "Автопроверка"], ["manual", "Фото-решение"], ["combined", "Комбинированное"]].map(([value, label]) => (
+              <label key={value}><input type="radio" name="mode" value={value} checked={mode === value} onChange={() => setMode(value)} /> {label}</label>
+            ))}
+          </fieldset>
           <label>
             Название
             <input value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -613,7 +639,7 @@ export function HomeworkBuilder() {
             </label>
           </div>
         </section>
-        <section className="panel form-panel">
+        {mode !== "manual" && <section className="panel form-panel">
           <div className="panel-head">
             <h2>Вопрос 1</h2>
             <span>1 балл</span>
@@ -629,7 +655,13 @@ export function HomeworkBuilder() {
             Принимаемый ответ
             <input value={answer} onChange={(e) => setAnswer(e.target.value)} />
           </label>
-        </section>
+        </section>}
+        {mode !== "automatic" && <section className="panel form-panel">
+          <h2>Фото-решение</h2>
+          <p>Ученик сможет загрузить, повернуть, обрезать и упорядочить страницы решения.</p>
+          <label>Максимум баллов<input type="number" min="1" defaultValue="5" /></label>
+        </section>}
+        {saved && <p className="save-confirmation" role="status">Черновик сохранён. Его можно открыть в предпросмотре.</p>}
         <div className="sticky-actions">
           <Link className="button secondary" to="/teacher/homework">
             Отмена
@@ -637,6 +669,7 @@ export function HomeworkBuilder() {
           <button className="button" disabled={!valid}>
             <Save size={17} /> Сохранить черновик
           </button>
+          <Link className="button secondary" to="/teacher/homework/functions/preview">Предпросмотр</Link>
         </div>
       </form>
     </>
@@ -644,6 +677,9 @@ export function HomeworkBuilder() {
 }
 
 export function TestAttempt() {
+  const location = useLocation();
+  const preview = location.pathname.includes("/teacher/");
+  const resultView = location.pathname.includes("/results/");
   const questions = [
     {
       id: "q1",
@@ -660,7 +696,7 @@ export function TestAttempt() {
     "eclipse-attempt",
     {},
   );
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(resultView);
   const result = questions.filter((q) =>
     isAcceptedAnswer(answers[q.id] ?? "", q.accepted),
   ).length;
@@ -674,7 +710,7 @@ export function TestAttempt() {
     return (
       <>
         <PageTitle
-          eyebrow="РЕЗУЛЬТАТ"
+          eyebrow={preview ? "ПРЕДПРОСМОТР" : "РЕЗУЛЬТАТ"}
           title={`${score.percentage}% — попытка завершена.`}
         />
         <section className="panel result">
@@ -682,7 +718,7 @@ export function TestAttempt() {
             {score.score} из {score.maximum}
           </strong>
           <p>
-            Верных ответов: {result}. Можно использовать оставшуюся попытку.
+            Верных ответов: {result}. {preview ? "Так ученик увидит итоговый разбор." : "Можно использовать оставшуюся попытку."}
           </p>
           {questions.map((q) => (
             <div className="answer-review" key={q.id}>
@@ -724,6 +760,7 @@ export function TestAttempt() {
               <label>
                 Ваш ответ
                 <input
+                  disabled={preview}
                   inputMode="decimal"
                   value={answers[q.id] ?? ""}
                   onChange={(e) =>
@@ -733,7 +770,7 @@ export function TestAttempt() {
               </label>
             </article>
           ))}
-          <button
+          {!preview && <button
             className="button finish"
             onClick={() =>
               confirm(
@@ -742,7 +779,8 @@ export function TestAttempt() {
             }
           >
             Завершить попытку
-          </button>
+          </button>}
+          {preview && <p className="preview-note" role="note">Режим преподавателя: ответы и отправка отключены.</p>}
         </div>
       </section>
     </>

@@ -31,3 +31,13 @@ test('wrong role is redirected and mobile layout does not overflow', async ({ pa
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
   expect(overflow).toBe(false)
 })
+
+test('teacher can choose assignment modes and preview without submitting', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('eclipse-demo-role', 'teacher'))
+  await page.goto('/teacher/homework/new')
+  await page.getByLabel('Фото-решение').check()
+  await expect(page.getByRole('heading', { name: 'Фото-решение' })).toBeVisible()
+  await page.getByRole('link', { name: 'Предпросмотр' }).click()
+  await expect(page.getByText('Режим преподавателя: ответы и отправка отключены.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Завершить попытку' })).toHaveCount(0)
+})

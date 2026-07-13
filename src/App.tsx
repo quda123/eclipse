@@ -54,7 +54,7 @@ function Landing() {
     return () => context.revert();
   }, []);
   return (
-    <main className="landing" ref={root}>
+    <main className="landing" id="top" ref={root}>
       <video
         className="hero-video"
         autoPlay
@@ -65,12 +65,12 @@ function Landing() {
       >
         <source src={video} type="video/mp4" />
       </video>
-      <div className="hero-shade" />
       <nav className="nav">
         <Link className="logo" to="/">
           Eclipse<sup>®</sup>
         </Link>
         <div className="nav-links">
+          <a href="#top">Главная</a>
           <a href="#features">Возможности</a>
           <a href="#about">О платформе</a>
           <Link className="login-link" to="/login">
@@ -379,6 +379,7 @@ export default function App() {
         <Route path="homework" element={<HomeworkList />} />
         <Route path="homework/new" element={<HomeworkBuilder />} />
         <Route path="homework/:id/edit" element={<HomeworkBuilder />} />
+        <Route path="homework/:id/preview" element={<TestAttempt />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
@@ -395,6 +396,7 @@ export default function App() {
         <Route index element={<StudentDashboard />} />
         <Route path="homework" element={<HomeworkList student />} />
         <Route path="homework/:assignmentId" element={<TestAttempt />} />
+        <Route path="results/:attemptId" element={<TestAttempt />} />
         <Route
           path="homework/:assignmentId/photos"
           element={<PhotoSubmission />}

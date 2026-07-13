@@ -61,7 +61,13 @@ function Landing() {
         loop
         muted
         playsInline
-        poster="/eclipse-poster.jpg"
+        preload="auto"
+        onCanPlay={(event) => {
+          if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            event.currentTarget.currentTime = 0;
+            event.currentTarget.pause();
+          }
+        }}
       >
         <source src={video} type="video/mp4" />
       </video>

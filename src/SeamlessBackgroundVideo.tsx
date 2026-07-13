@@ -50,31 +50,34 @@ export function SeamlessBackgroundVideo({
       });
     };
     const onTimeUpdate = () => {
+      if (reduced) return;
       const current = videos[active]!;
       if (Number.isFinite(current.duration) && current.duration - current.currentTime <= crossfadeDuration + 0.2) crossfade();
     };
+    const onReducedEnded = () => {
+      videos[0]!.currentTime = 0;
+      void play(videos[0]!);
+    };
     const onVisibility = () => {
       videos.forEach((video) => video!.pause());
-      if (!document.hidden && !reduced) void play(videos[active]!);
+      if (!document.hidden) void play(videos[active]!);
     };
 
-    videos.forEach((video) => { video!.addEventListener("timeupdate", onTimeUpdate); video!.addEventListener("ended", crossfade); });
+    videos.forEach((video) => video!.addEventListener("timeupdate", onTimeUpdate));
+    if (reduced) videos[0]!.addEventListener("ended", onReducedEnded);
+    else videos.forEach((video) => video!.addEventListener("ended", crossfade));
     document.addEventListener("visibilitychange", onVisibility);
     show(0);
     videos[1]!.pause();
     videos[1]!.currentTime = 0;
-    if (reduced) {
-      videos[0]!.currentTime = 0;
-      videos[0]!.pause();
-    } else {
-      void play(videos[0]!);
-    }
+    void play(videos[0]!);
     return () => {
       if (finishTimer) clearTimeout(finishTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       videos.forEach((video) => {
         video!.removeEventListener("timeupdate", onTimeUpdate);
         video!.removeEventListener("ended", crossfade);
+        video!.removeEventListener("ended", onReducedEnded);
         video!.pause();
         video!.removeAttribute("src");
         video!.load();

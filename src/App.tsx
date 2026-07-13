@@ -62,12 +62,6 @@ function Landing() {
         muted
         playsInline
         preload="auto"
-        onCanPlay={(event) => {
-          if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-            event.currentTarget.currentTime = 0;
-            event.currentTarget.pause();
-          }
-        }}
       >
         <source src={video} type="video/mp4" />
       </video>

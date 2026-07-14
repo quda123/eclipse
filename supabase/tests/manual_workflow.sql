@@ -31,9 +31,8 @@ select lives_ok($$
 $$,'student finalizes a fully staged submission');
 select is((select status::text from public.homework_assignments where id='53000000-0000-0000-0000-000000000002'),'awaiting_review','assignment awaits teacher review');
 select is((select count(*)::int from public.submission_images where submission_id=(select submission_id from test_submission)),1,'submitted image metadata is immutable in the submission');
-select is((select count(*)::int from public.notifications where dedupe_key='submission:'||(select submission_version_id from test_submission)::text),1,'teacher receives one deduplicated review notification');
-
 select set_config('request.jwt.claims','{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
+select is((select count(*)::int from public.notifications where dedupe_key='submission:'||(select submission_version_id from test_submission)::text),1,'teacher receives one deduplicated review notification');
 select lives_ok($$
   select public.save_manual_review(
     (select submission_id from test_submission),

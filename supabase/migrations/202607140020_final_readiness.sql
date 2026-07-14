@@ -57,6 +57,7 @@ create policy "participants read official results" on public.assignment_results 
   student_id=auth.uid() or public.is_linked_teacher(student_id)
 );
 grant select on public.assignment_results to authenticated;
+revoke insert,update,delete on public.assignment_results from authenticated;
 
 alter table public.profiles add column if not exists active_organization_id uuid references public.organizations(id);
 update public.profiles p set active_organization_id=(

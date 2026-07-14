@@ -42,10 +42,16 @@ jobs:
         shell: bash
         run: |
           eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY)=')"
-          curl --fail-with-body --silent --show-error \
+          AUTH_STATUS=$(curl --silent --show-error \
+            --output /tmp/eclipse-auth-response.json \
+            --write-out '%{http_code}' \
             "$API_URL/auth/v1/token?grant_type=password" \
             -H "apikey: $ANON_KEY" \
             -H "Content-Type: application/json" \
-            --data '{"email":"teacher@users.eclipse.local","password":"Eclipse-demo-2026"}' \
-            >/dev/null
+            --data '{"email":"teacher@users.eclipse.local","password":"Eclipse-demo-2026"}')
+          if [ "$AUTH_STATUS" != "200" ]; then
+            cat /tmp/eclipse-auth-response.json
+            docker logs supabase_auth_eclipse --tail 100
+            exit 1
+          fi
           ECLIPSE_BACKEND_E2E=1 VITE_SUPABASE_URL="$API_URL" VITE_SUPABASE_ANON_KEY="$ANON_KEY" pnpm exec playwright test tests/authenticated.e2e.spec.ts --project=desktop --workers=1

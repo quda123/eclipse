@@ -9,12 +9,12 @@ insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_co
 ('00000000-0000-0000-0000-000000000000','10000000-0000-0000-0000-000000000002','authenticated','authenticated','teacher2@users.eclipse.local',crypt('Eclipse-demo-2026',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
 ('00000000-0000-0000-0000-000000000000','20000000-0000-0000-0000-000000000003','authenticated','authenticated','student2@users.eclipse.local',crypt('Eclipse-demo-2026',gen_salt('bf')),now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
 insert into auth.identities(id,provider_id,user_id,identity_data,provider,last_sign_in_at,created_at,updated_at) values
-('70000000-0000-0000-0000-000000000001','teacher@users.eclipse.local','10000000-0000-0000-0000-000000000001','{"sub":"10000000-0000-0000-0000-000000000001","email":"teacher@users.eclipse.local"}','email',now(),now(),now()),
-('70000000-0000-0000-0000-000000000002','anna@users.eclipse.local','20000000-0000-0000-0000-000000000001','{"sub":"20000000-0000-0000-0000-000000000001","email":"anna@users.eclipse.local"}','email',now(),now(),now()),
-('70000000-0000-0000-0000-000000000003','maxim@users.eclipse.local','20000000-0000-0000-0000-000000000002','{"sub":"20000000-0000-0000-0000-000000000002","email":"maxim@users.eclipse.local"}','email',now(),now(),now());
+('70000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','{"sub":"10000000-0000-0000-0000-000000000001","email":"teacher@users.eclipse.local"}','email',now(),now(),now()),
+('70000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','{"sub":"20000000-0000-0000-0000-000000000001","email":"anna@users.eclipse.local"}','email',now(),now(),now()),
+('70000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000002','{"sub":"20000000-0000-0000-0000-000000000002","email":"maxim@users.eclipse.local"}','email',now(),now(),now());
 insert into auth.identities(id,provider_id,user_id,identity_data,provider,last_sign_in_at,created_at,updated_at) values
-('70000000-0000-0000-0000-000000000004','teacher2@users.eclipse.local','10000000-0000-0000-0000-000000000002','{"sub":"10000000-0000-0000-0000-000000000002","email":"teacher2@users.eclipse.local"}','email',now(),now(),now()),
-('70000000-0000-0000-0000-000000000005','student2@users.eclipse.local','20000000-0000-0000-0000-000000000003','{"sub":"20000000-0000-0000-0000-000000000003","email":"student2@users.eclipse.local"}','email',now(),now(),now());
+('70000000-0000-0000-0000-000000000004','10000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000002','{"sub":"10000000-0000-0000-0000-000000000002","email":"teacher2@users.eclipse.local"}','email',now(),now(),now()),
+('70000000-0000-0000-0000-000000000005','20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000003','{"sub":"20000000-0000-0000-0000-000000000003","email":"student2@users.eclipse.local"}','email',now(),now(),now());
 
 insert into public.organizations(id,name) values('30000000-0000-0000-0000-000000000001','Eclipse Demo');
 insert into public.profiles(id,username,first_name,last_name,class_name,must_change_password) values

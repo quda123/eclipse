@@ -68,7 +68,7 @@ insert into public.lessons(id,organization_id,teacher_id,student_id,starts_at,en
 ('60000000-0000-0000-0000-000000000002','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002',date_trunc('day',now())+interval '18 hours',date_trunc('day',now())+interval '18 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-maxim');
 insert into public.notifications(user_id,kind,title,href,dedupe_key) values
 ('10000000-0000-0000-0000-000000000001','submission','Анна загрузила фотографии','/teacher/review','submission:demo'),
-('20000000-0000-0000-0000-000000000001','homework','Новое задание: Функции','/student/homework/functions','homework:functions');
+('20000000-0000-0000-0000-000000000001','homework','Новое задание: Функции','/student/homework/53000000-0000-0000-0000-000000000001','homework:functions');
 
 -- Второй изолированный tenant для RLS-проверок.
 insert into public.organizations(id,name) values('30000000-0000-0000-0000-000000000002','Eclipse RLS Tenant B');
@@ -77,12 +77,13 @@ insert into public.profiles(id,username,first_name,last_name,class_name,must_cha
 ('20000000-0000-0000-0000-000000000003','student2','Ирина','Смирнова','9 класс',false);
 insert into public.organization_members values
 ('30000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000002','teacher'),
-('30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000003','student');
+('30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000003','student'),
+('30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001','student');
 insert into public.teacher_student_links(teacher_id,student_id,organization_id) values('10000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000003','30000000-0000-0000-0000-000000000002');
 
-insert into public.manual_tasks(homework_version_id,position,prompt) values
-('51000000-0000-0000-0000-000000000002',1,'Докажите теорему Пифагора'),
-('51000000-0000-0000-0000-000000000002',2,'Решите задачу на применение теоремы');
+insert into public.manual_tasks(homework_version_id,position,prompt,max_points) values
+('51000000-0000-0000-0000-000000000002',1,'Докажите теорему Пифагора',2),
+('51000000-0000-0000-0000-000000000002',2,'Решите задачу на применение теоремы',3);
 insert into public.attempts(id,assignment_id,student_id,attempt_number,answers,score,maximum_score,idempotency_key,started_at,duration_seconds,submitted_at) values
 ('54000000-0000-0000-0000-000000000001','53000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',1,'{"52000000-0000-0000-0000-000000000001":"7","52000000-0000-0000-0000-000000000002":"гипербола"}',1,2,'55000000-0000-0000-0000-000000000001',now()-interval '25 minutes',1500,now()),
 ('54000000-0000-0000-0000-000000000002','53000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',2,'{"52000000-0000-0000-0000-000000000001":"7","52000000-0000-0000-0000-000000000002":"парабола"}',2,2,'55000000-0000-0000-0000-000000000002',now()-interval '15 minutes',900,now());
@@ -97,8 +98,8 @@ insert into public.homework_questions(id,homework_version_id,position,prompt) va
 ('52000000-0000-0000-0000-000000000003','51000000-0000-0000-0000-000000000003',1,'Сколько четвертей в числе 3/4?');
 insert into public.question_accepted_answers(question_id,value) values
 ('52000000-0000-0000-0000-000000000003','3');
-insert into public.manual_tasks(homework_version_id,position,prompt) values
-('51000000-0000-0000-0000-000000000003',1,'Покажите дробь 3/4 на рисунке');
+insert into public.manual_tasks(homework_version_id,position,prompt,max_points) values
+('51000000-0000-0000-0000-000000000003',1,'Покажите дробь 3/4 на рисунке',4);
 insert into public.homework_assignments(id,homework_version_id,student_id,deadline_at,timezone,status) values
 ('53000000-0000-0000-0000-000000000004','51000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001',now()+interval '7 days','Europe/Moscow','reviewed');
 insert into public.attempts(id,assignment_id,student_id,attempt_number,answers,score,maximum_score,idempotency_key,started_at,duration_seconds,submitted_at) values
@@ -107,11 +108,19 @@ insert into public.manual_submissions(id,assignment_id,student_id,version,submit
 ('56000000-0000-0000-0000-000000000001','53000000-0000-0000-0000-000000000004','20000000-0000-0000-0000-000000000001',1,now()-interval '9 minutes',now()-interval '2 minutes');
 insert into public.manual_submission_versions(id,submission_id,version,submitted_at) values
 ('57000000-0000-0000-0000-000000000001','56000000-0000-0000-0000-000000000001',1,now()-interval '9 minutes');
-insert into public.manual_task_scores(submission_id,task_number,points) values
-('56000000-0000-0000-0000-000000000001',1,2);
+insert into public.manual_task_scores(submission_id,task_number,manual_task_id,points)
+select '56000000-0000-0000-0000-000000000001',position,id,2 from public.manual_tasks
+where homework_version_id='51000000-0000-0000-0000-000000000003' and position=1;
 
 -- Еженедельная серия и перенесённое отдельное занятие.
 insert into public.lesson_series(id,organization_id,teacher_id,student_id,rrule,timezone,zoom_url) values
 ('61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','FREQ=WEEKLY','Europe/Moscow','https://zoom.us/j/demo-anna');
 insert into public.lessons(id,series_id,organization_id,teacher_id,student_id,starts_at,ends_at,timezone,zoom_url,status,original_occurrence) values
-('60000000-0000-0000-0000-000000000003','61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '3 days 17 hours',date_trunc('day',now())+interval '3 days 17 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna','moved',date_trunc('day',now())+interval '3 days 16 hours');
+('60000000-0000-0000-0000-000000000003','61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '3 days 17 hours',date_trunc('day',now())+interval '3 days 17 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna','moved',date_trunc('day',now())+interval '3 days 16 hours'),
+('60000000-0000-0000-0000-000000000004','61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '24 days 17 hours',date_trunc('day',now())+interval '24 days 17 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna','scheduled',date_trunc('day',now())+interval '24 days 17 hours');
+
+do $$ declare item record; begin
+  for item in select id from public.homework_assignments loop
+    perform public.recalculate_assignment_result(item.id);
+  end loop;
+end $$;

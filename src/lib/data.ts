@@ -110,7 +110,7 @@ export type HomeworkDraftPayload = {
   subjectId: string;
   topicId: string;
   questions: HomeworkQuestionInput[];
-  manualTasks: string[];
+  manualTasks: { prompt: string; maxPoints: number }[];
 };
 export async function saveHomeworkDraft(
   draftId: string | undefined,
@@ -372,12 +372,12 @@ export type LessonCard = {
   status: string;
   zoomUrl: string | null;
 };
-async function fetchLessons(): Promise<LessonCard[]> {
+async function fetchLessons(fromIso?: string, toIso?: string): Promise<LessonCard[]> {
   if (!supabase) return [];
-  const from = new Date();
-  from.setHours(0, 0, 0, 0);
-  const to = new Date(from);
-  to.setDate(to.getDate() + 14);
+  const from = fromIso ? new Date(fromIso) : new Date();
+  if (!fromIso) from.setHours(0, 0, 0, 0);
+  const to = toIso ? new Date(toIso) : new Date(from);
+  if (!toIso) to.setDate(to.getDate() + 14);
   const { data, error } = await supabase
     .from("lessons")
     .select(
@@ -404,8 +404,11 @@ async function fetchLessons(): Promise<LessonCard[]> {
     };
   });
 }
-export const useLessons = () =>
-  useQuery({ queryKey: ["lessons"], queryFn: fetchLessons });
+export const useLessons = (from?: string, to?: string) =>
+  useQuery({
+    queryKey: ["lessons", from ?? "default", to ?? "default"],
+    queryFn: () => fetchLessons(from, to),
+  });
 export async function createLesson(input: {
   studentId: string;
   startsAt: string;
@@ -569,127 +572,38 @@ async function fetchStudentDashboard(): Promise<StudentDashboardData> {
       recentResults: [],
     };
   if (!supabase) throw new Error("Supabase не настроен");
-  const now = new Date().toISOString();
-  const [assignmentResult, lessonResult, attemptResult] = await Promise.all([
-    supabase
-      .from("homework_assignments")
-      .select(
-        "id,deadline_at,status,homework_versions(title,mode,topics(name))",
-      )
-      .order("deadline_at"),
-    supabase
-      .from("lessons")
-      .select(
-        "id,starts_at,ends_at,status,zoom_url,profiles!lessons_student_id_fkey(first_name,last_name)",
-      )
-      .gte("starts_at", now)
-      .neq("status", "cancelled")
-      .order("starts_at")
-      .limit(1),
-    supabase
-      .from("attempts")
-      .select("id,score,maximum_score,submitted_at")
-      .order("submitted_at", { ascending: false })
-      .limit(10),
-  ]);
-  if (assignmentResult.error) throw assignmentResult.error;
-  if (lessonResult.error) throw lessonResult.error;
-  if (attemptResult.error) throw attemptResult.error;
-  const labels: Record<string, string> = {
-    not_started: "Не начато",
-    in_progress: "В процессе",
-    submitted: "Сдано",
-    awaiting_review: "Ожидает проверки",
-    reviewed: "Проверено",
-    overdue: "Просрочено",
-    returned: "Возвращено",
-  };
-  const assignments = (assignmentResult.data ?? []).map((row) => {
-    const version = Array.isArray(row.homework_versions)
-      ? row.homework_versions[0]
-      : row.homework_versions;
-    const topics = version?.topics as unknown as
-      { name: string } | { name: string }[] | null;
-    return {
-      id: row.id,
-      homeworkId: "",
-      title: version?.title ?? "Задание",
-      topic:
-        (Array.isArray(topics) ? topics[0]?.name : topics?.name) ??
-        "Математика",
-      deadline: new Date(row.deadline_at).toLocaleString("ru-RU", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      deadlineAt: row.deadline_at,
-      status: labels[row.status] ?? row.status,
-      mode: version?.mode ?? "automatic",
-    };
-  });
-  const attempts = (attemptResult.data ?? []).map((x) => ({
-    id: x.id,
-    score: x.score,
-    maximum: x.maximum_score,
-    submittedAt: x.submitted_at,
-  }));
-  const percentage = attempts
-    .filter((x) => x.maximum > 0)
-    .map((x) => (x.score / x.maximum) * 100);
-  const completed = assignments.filter((a) =>
-    ["Сдано", "Ожидает проверки", "Проверено"].includes(a.status),
-  ).length;
-  const lesson = (lessonResult.data ?? [])[0];
-  const profile = lesson
-    ? Array.isArray(lesson.profiles)
-      ? lesson.profiles[0]
-      : lesson.profiles
-    : null;
-  return {
-    nextLesson: lesson
-      ? {
-          id: lesson.id,
-          seriesId: null,
-          startsAt: lesson.starts_at,
-          endsAt: lesson.ends_at,
-          studentName: profile
-            ? `${profile.first_name} ${profile.last_name}`
-            : "",
-          status: lesson.status,
-          zoomUrl: lesson.zoom_url,
-        }
-      : null,
-    nextAssignment:
-      assignments.find(
-        (a) =>
-          new Date(a.deadlineAt) >= new Date() &&
-          !["Сдано", "Проверено"].includes(a.status),
-      ) ?? null,
-    activeCount: assignments.filter(
-      (a) =>
-        !["Сдано", "Проверено"].includes(a.status) &&
-        new Date(a.deadlineAt) >= new Date(),
-    ).length,
-    overdueCount: assignments.filter(
-      (a) =>
-        new Date(a.deadlineAt) < new Date() &&
-        !["Сдано", "Проверено"].includes(a.status),
-    ).length,
-    average: percentage.length
-      ? Math.round(percentage.reduce((a, b) => a + b, 0) / percentage.length)
-      : 0,
-    completionRate: assignments.length
-      ? Math.round((completed / assignments.length) * 100)
-      : 0,
-    recentResults: attempts.slice(0, 5),
-  };
+  const { data: dashboard, error: dashboardError } = await supabase.rpc(
+    "student_dashboard",
+  );
+  if (dashboardError) throw dashboardError;
+  return dashboard as StudentDashboardData;
 }
 export const useStudentDashboard = () =>
   useQuery({ queryKey: ["student-dashboard"], queryFn: fetchStudentDashboard });
 
+export type TeacherDashboardData = {
+  teacherName: string;
+  awaitingReviewCount: number;
+  overdueCount: number;
+  deadlineTodayCount: number;
+  deadlineTomorrowCount: number;
+  lessonsTodayCount: number;
+  newAutomaticResultsCount: number;
+  newPhotoSubmissionsCount: number;
+  studentsWithoutFutureLessonCount: number;
+  attentionItems: { id: string; title: string; href: string }[];
+};
+async function fetchTeacherDashboard(): Promise<TeacherDashboardData> {
+  if (!supabase) throw new Error("Supabase не настроен");
+  const { data, error } = await supabase.rpc("teacher_dashboard");
+  if (error) throw error;
+  return data as TeacherDashboardData;
+}
+export const useTeacherDashboard = () =>
+  useQuery({ queryKey: ["teacher-dashboard"], queryFn: fetchTeacherDashboard });
+
 export type HomeworkQuestionInput = { prompt: string; answers: string[] };
+export type ManualTaskInput = { prompt: string; maxPoints: number };
 export type HomeworkEditorData = {
   id: string;
   subjectId: string;
@@ -699,14 +613,14 @@ export type HomeworkEditorData = {
   mode: "automatic" | "manual" | "combined";
   attempts: number;
   questions: HomeworkQuestionInput[];
-  manualTasks: string[];
+  manualTasks: ManualTaskInput[];
 };
 async function fetchHomeworkEditor(id: string): Promise<HomeworkEditorData> {
   if (!supabase) throw new Error("Supabase не настроен");
   const { data, error } = await supabase
     .from("homeworks")
     .select(
-      "id,title,homework_versions(id,subject_id,topic_id,instructions,mode,attempts_allowed,version,homework_questions(id,position,prompt,question_accepted_answers(value)),manual_tasks(id,position,prompt))",
+      "id,title,homework_versions(id,subject_id,topic_id,instructions,mode,attempts_allowed,version,homework_questions(id,position,prompt,question_accepted_answers(value)),manual_tasks(id,position,prompt,max_points))",
     )
     .eq("id", id)
     .single();
@@ -732,7 +646,7 @@ async function fetchHomeworkEditor(id: string): Promise<HomeworkEditorData> {
       })),
     manualTasks: [...(version.manual_tasks ?? [])]
       .sort((a, b) => a.position - b.position)
-      .map((t) => t.prompt),
+      .map((t) => ({ prompt: t.prompt, maxPoints: t.max_points })),
   };
 }
 export const useHomeworkEditor = (id: string) =>
@@ -748,7 +662,7 @@ export async function createHomework(input: {
   title: string;
   mode: "automatic" | "manual" | "combined";
   questions: HomeworkQuestionInput[];
-  manualTasks: string[];
+  manualTasks: ManualTaskInput[];
   instructions: string;
   deadline: string;
   attempts: number;
@@ -760,8 +674,11 @@ export async function createHomework(input: {
   const manualTasks =
     input.mode === "automatic"
       ? []
-      : input.manualTasks.map((prompt) => ({ prompt }));
-  const { data, error } = await supabase.rpc("create_homework", {
+      : input.manualTasks.map(({ prompt, maxPoints }) => ({
+          prompt,
+          max_points: maxPoints,
+        }));
+  const { data, error } = await supabase.rpc("create_homework_v2", {
     p_title: input.title,
     p_mode: input.mode,
     p_deadline: new Date(input.deadline).toISOString(),
@@ -786,6 +703,7 @@ export async function createHomework(input: {
 
 export type AssignmentDetail = {
   id: string;
+  studentId: string;
   title: string;
   deadlineAt: string;
   attemptsAllowed: number;
@@ -829,6 +747,7 @@ async function fetchAssignment(id: string): Promise<AssignmentDetail> {
   if (getDemoRole())
     return {
       id,
+      studentId: "demo",
       title: "Функции и их графики",
       deadlineAt: "2026-07-15T23:59:00",
       attemptsAllowed: 2,
@@ -862,11 +781,12 @@ async function fetchAssignment(id: string): Promise<AssignmentDetail> {
   const version = Array.isArray(data.homework_versions)
     ? data.homework_versions[0]
     : data.homework_versions;
-  const { data: draft } = await supabase
-    .from("attempt_drafts")
-    .select("answers,updated_at")
-    .eq("assignment_id", id)
-    .maybeSingle();
+  const { data: started, error: startError } = await supabase.rpc(
+    "start_or_resume_attempt_draft",
+    { p_assignment: id },
+  );
+  if (startError) throw startError;
+  const draft = started?.[0];
   const local = readLocalDraft(user.id, id);
   const serverUpdated = draft?.updated_at
     ? new Date(draft.updated_at).getTime()
@@ -877,6 +797,7 @@ async function fetchAssignment(id: string): Promise<AssignmentDetail> {
       : ((draft?.answers as Record<string, string>) ?? {});
   return {
     id: data.id,
+    studentId: user.id,
     title: version?.title ?? "Задание",
     deadlineAt: data.deadline_at,
     attemptsAllowed: version?.attempts_allowed ?? 1,
@@ -920,6 +841,7 @@ export async function saveAttemptDraft(
 export async function submitAttempt(
   assignmentId: string,
   answers: Record<string, string>,
+  idempotencyKey: string,
 ) {
   if (getDemoRole()) {
     localStorage.removeItem(draftKey("demo", assignmentId));
@@ -933,10 +855,11 @@ export async function submitAttempt(
   const { data, error } = await supabase.rpc("submit_attempt", {
     p_assignment: assignmentId,
     p_answers: answers,
-    p_idempotency: crypto.randomUUID(),
+    p_idempotency: idempotencyKey,
   });
   if (error) throw error;
   localStorage.removeItem(draftKey(user.id, assignmentId));
+  localStorage.removeItem(`eclipse-submit:v1:${user.id}:${assignmentId}`);
   return data?.[0] ?? null;
 }
 
@@ -973,6 +896,44 @@ export const useAttemptResult = (id: string, enabled = true) =>
     queryKey: ["attempt-result", id],
     queryFn: () => fetchAttemptResult(id),
     enabled: Boolean(id) && enabled,
+  });
+
+export type AssignmentResult = {
+  assignment_id: string;
+  title: string;
+  mode: "automatic" | "manual" | "combined";
+  status:
+    | "automatic_pending"
+    | "automatic_complete"
+    | "manual_pending"
+    | "awaiting_review"
+    | "reviewed"
+    | "returned";
+  automatic_score: number;
+  automatic_maximum: number;
+  manual_score: number;
+  manual_maximum: number;
+  total_score: number;
+  total_maximum: number;
+  percentage: number;
+  best_attempt_id: string | null;
+  attempts_used: number;
+  attempts_allowed: number;
+  updated_at: string;
+};
+async function fetchAssignmentResult(id: string): Promise<AssignmentResult> {
+  if (!supabase) throw new Error("Supabase не настроен");
+  const { data, error } = await supabase.rpc("get_assignment_result", {
+    p_assignment: id,
+  });
+  if (error || !data) throw error ?? new Error("Результат не найден");
+  return data as AssignmentResult;
+}
+export const useAssignmentResult = (id: string) =>
+  useQuery({
+    queryKey: ["assignment-result", id],
+    queryFn: () => fetchAssignmentResult(id),
+    enabled: Boolean(id),
   });
 
 export async function saveTeacherNote(studentId: string, body: string) {
@@ -1016,6 +977,7 @@ export type PreparedSubmissionImage = {
   width: number;
   height: number;
   rotation: number;
+  crop: Record<string, number>;
 };
 export async function uploadManualSubmission(
   assignmentId: string,
@@ -1073,7 +1035,7 @@ export async function uploadManualSubmission(
         width: image.width,
         height: image.height,
         rotation: image.rotation,
-        crop: {},
+        crop: image.crop,
       });
       onProgress?.(index, "done");
     }
@@ -1167,7 +1129,7 @@ export type SubmissionDetail = {
     originalUrl: string;
     originalName: string;
   }[];
-  tasks: { id: string; position: number; prompt: string }[];
+  tasks: { id: string; position: number; prompt: string; maxPoints: number }[];
 };
 async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
   if (!supabase) throw new Error("Supabase не настроен");
@@ -1178,7 +1140,7 @@ async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
   const { data, error } = await supabase
     .from("manual_submissions")
     .select(
-      "id,assignment_id,version,student:profiles!manual_submissions_student_id_fkey(first_name,last_name),assignment:homework_assignments!manual_submissions_assignment_id_fkey(homework_versions(id,title,manual_tasks(id,position,prompt))),submission_images(id,position,processed_path,original_path,original_name)",
+      "id,assignment_id,version,student:profiles!manual_submissions_student_id_fkey(first_name,last_name),assignment:homework_assignments!manual_submissions_assignment_id_fkey(homework_versions(id,title,manual_tasks(id,position,prompt,max_points))),submission_images(id,position,processed_path,original_path,original_name)",
     )
     .eq("id", id)
     .single();
@@ -1251,7 +1213,7 @@ async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
         .map((task) => [task.id, scoreByPosition.get(task.position)!]),
     ),
     images,
-    tasks,
+    tasks: tasks.map((task) => ({ ...task, maxPoints: task.max_points })),
   };
 }
 export const useSubmissionDetail = (id: string) =>

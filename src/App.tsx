@@ -30,6 +30,7 @@ const StudentDetail = portalComponent("StudentDetail");
 const StudentsPage = portalComponent("StudentsPage");
 const TeacherDashboard = portalComponent("TeacherDashboard");
 const TestAttempt = portalComponent("TestAttempt");
+const AssignmentResultPage = portalComponent("AssignmentResultPage");
 
 const video =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31.mp4";
@@ -556,6 +557,7 @@ export default function App() {
           <Route path="review" element={<ReviewPage />} />
           <Route path="review/:submissionId" element={<ReviewPage />} />
           <Route path="results/:attemptId" element={<TestAttempt />} />
+          <Route path="homework/:assignmentId/result" element={<AssignmentResultPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="settings" element={<SimplePage title="Настройки" />} />
@@ -572,6 +574,7 @@ export default function App() {
           <Route path="homework" element={<HomeworkList student />} />
           <Route path="homework/:assignmentId" element={<TestAttempt />} />
           <Route path="results/:attemptId" element={<TestAttempt />} />
+          <Route path="homework/:assignmentId/result" element={<AssignmentResultPage />} />
           <Route
             path="homework/:assignmentId/photos"
             element={<PhotoSubmission />}

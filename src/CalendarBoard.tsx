@@ -8,7 +8,17 @@ import { useLocation } from "react-router-dom";
 import { updateLesson, updateLessonSeries, useLessons } from "./lib/data";
 
 export default function CalendarBoard() {
-  const { data: lessons = [], isLoading, error } = useLessons();
+  const [visibleRange, setVisibleRange] = useState(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 7);
+    const end = new Date();
+    end.setDate(end.getDate() + 35);
+    return { start: start.toISOString(), end: end.toISOString() };
+  });
+  const { data: lessons = [], isLoading, error } = useLessons(
+    visibleRange.start,
+    visibleRange.end,
+  );
   const teacher = useLocation().pathname.startsWith("/teacher");
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null),
@@ -67,6 +77,9 @@ export default function CalendarBoard() {
           right: "dayGridMonth,timeGridWeek",
         }}
         buttonText={{ today: "Сегодня", month: "Месяц", week: "Неделя" }}
+        datesSet={({ start, end }) =>
+          setVisibleRange({ start: start.toISOString(), end: end.toISOString() })
+        }
         events={lessons.map((lesson) => ({
           id: lesson.id,
           title: `${lesson.studentName || "Математика"}${lesson.status === "cancelled" ? " · Отменено" : lesson.status === "moved" ? " · Перенесено" : ""}`,

@@ -60,9 +60,10 @@ describe("scoring", () => {
     const first = { score: 7, id: "first" };
     expect(bestAttempt([first, { score: 7, id: "second" }])).toBe(first);
   });
-  it("calculates the fixed manual maximum", () => {
+  it("calculates fixed legacy and variable manual maximums", () => {
     expect(manualMaximum(3)).toBe(6);
     expect(manualMaximum(-1)).toBe(0);
+    expect(manualMaximum([2, 3, 4])).toBe(9);
   });
 });
 describe("workflow helpers", () => {
@@ -95,7 +96,7 @@ describe("workflow helpers", () => {
       attempts: 2,
       studentIds: ["student"],
       questions: [{ prompt: "2+2", answers: ["4"] }],
-      manualTasks: ["Покажите решение"],
+      manualTasks: [{ prompt: "Покажите решение", maxPoints: 3 }],
     };
     expect(validateHomework({ ...base, mode: "combined" })).toEqual([]);
     expect(

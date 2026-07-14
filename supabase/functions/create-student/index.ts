@@ -21,7 +21,8 @@ Deno.serve(async (request) => {
   const client = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } })
   const { data: { user }, error: userError } = await client.auth.getUser()
   if (userError || !user) return json({ error: 'Не авторизован' }, 401)
-  const { data: member, error: memberError } = await client.from('organization_members').select('organization_id, role').eq('user_id', user.id).in('role', ['owner', 'teacher']).limit(1).maybeSingle()
+  const { data: profile } = await client.from('profiles').select('active_organization_id').eq('id', user.id).single()
+  const { data: member, error: memberError } = await client.from('organization_members').select('organization_id, role').eq('user_id', user.id).eq('organization_id', profile?.active_organization_id ?? '').in('role', ['owner', 'teacher']).maybeSingle()
   if (memberError || !member) return json({ error: 'Недостаточно прав' }, 403)
 
   let body: Record<string, unknown>

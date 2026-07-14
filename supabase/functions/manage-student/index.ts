@@ -33,23 +33,30 @@ Deno.serve(async (request) => {
     const { error } = await admin.auth.admin.updateUserById(studentId, { password })
     if (error) return json({ error: 'Не удалось сменить пароль' }, 400)
     const { error: profileError } = await admin.from('profiles').update({ must_change_password: true }).eq('id', studentId)
-    if (profileError) return json({ error: 'Пароль изменён, но профиль не обновлён' }, 500)
+    if (profileError) return json({ ok: false, actionCompleted: true, auditRecorded: false, warning: 'Пароль изменён, но профиль требует ручного обновления' }, 207)
   } else if (action === 'archive' || action === 'restore') {
     const archived = action === 'archive'
     const { error: authError } = await admin.auth.admin.updateUserById(studentId, { ban_duration: archived ? '876000h' : 'none' })
     if (authError) return json({ error: 'Не удалось изменить доступ' }, 500)
     const { error: profileError } = await admin.from('profiles').update({ status: archived ? 'archived' : 'active' }).eq('id', studentId)
-    if (profileError) return json({ error: 'Доступ изменён, но профиль не обновлён' }, 500)
+    if (profileError) {
+      await admin.auth.admin.updateUserById(studentId, { ban_duration: archived ? 'none' : '876000h' })
+      return json({ ok: false, actionCompleted: false, auditRecorded: false, warning: 'Изменение доступа отменено: профиль не обновлён' }, 500)
+    }
   } else {
     const className = typeof body.className === 'string' ? body.className.trim() : ''
     const zoomUrl = typeof body.zoomUrl === 'string' ? body.zoomUrl.trim() : ''
     if (className.length > 40 || (zoomUrl && !/^https:\/\/\S+$/i.test(zoomUrl))) return json({ error: 'Проверьте класс и ссылку' }, 400)
+    const { data: previousProfile } = await admin.from('profiles').select('class_name').eq('id', studentId).single()
     const { error: profileError } = await admin.from('profiles').update({ class_name: className || null }).eq('id', studentId)
     if (profileError) return json({ error: 'Не удалось обновить класс' }, 500)
     const { error: linkUpdateError } = await admin.from('teacher_student_links').update({ default_zoom_url: zoomUrl || null }).eq('teacher_id', user.id).eq('student_id', studentId)
-    if (linkUpdateError) return json({ error: 'Не удалось обновить ссылку' }, 500)
+    if (linkUpdateError) {
+      await admin.from('profiles').update({ class_name: previousProfile?.class_name ?? null }).eq('id', studentId)
+      return json({ ok: false, actionCompleted: false, auditRecorded: false, warning: 'Изменения отменены: ссылка не обновлена' }, 500)
+    }
   }
   const { error: auditError } = await admin.from('audit_logs').insert({ organization_id: link.organization_id, actor_id: user.id, action: String(action).replace('-', '_'), entity_type: 'profile', entity_id: studentId })
-  if (auditError) return json({ error: 'Операция выполнена, но не записана в журнал' }, 500)
-  return json({ ok: true })
+  if (auditError) return json({ ok: true, actionCompleted: true, auditRecorded: false, warning: 'Операция выполнена, но запись аудита требует восстановления' }, 207)
+  return json({ ok: true, actionCompleted: true, auditRecorded: true, warning: null })
 })

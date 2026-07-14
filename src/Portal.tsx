@@ -27,7 +27,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { isAcceptedAnswer, validateHomework } from "./lib/homework";
+import { isAcceptedAnswer, validateHomework, validateImage } from "./lib/homework";
 import { supabase } from "./lib/supabase";
 import { usernameSchema } from "./lib/schemas";
 import {
@@ -49,6 +49,7 @@ import {
   submitAttempt,
   uploadManualSubmission,
   useAssignment,
+  useAssignmentResult,
   useAssignments,
   useAttemptResult,
   useCurrentProfile,
@@ -63,6 +64,7 @@ import {
   useStudents,
   useSubmissionDetail,
   useTeacherNote,
+  useTeacherDashboard,
   type StudentCard,
 } from "./lib/data";
 import { useQueryClient } from "@tanstack/react-query";
@@ -95,7 +97,14 @@ async function imageInfo(file: File) {
       image.src = url;
     },
   );
-  return { file, url, rotation: 0, ...dimensions };
+  return {
+    file,
+    url,
+    processedBlob: null as Blob | null,
+    cropMetadata: {} as Record<string, number>,
+    rotation: 0,
+    ...dimensions,
+  };
 }
 
 async function renderImage(src: string, rotation: number, maxSide: number) {
@@ -179,6 +188,42 @@ function useAccessibleDialog(open: boolean, onClose: () => void) {
     };
   }, [open]);
   return ref;
+}
+
+function FullscreenImageDialog({
+  src,
+  alt,
+  transform,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  transform?: string;
+  onClose: () => void;
+}) {
+  const ref = useAccessibleDialog(true, onClose);
+  return (
+    <div
+      ref={ref}
+      className="editor-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="image-preview-title"
+      aria-describedby="image-preview-description"
+      onClick={onClose}
+    >
+      <h2 id="image-preview-title" className="sr-only">Просмотр изображения</h2>
+      <p id="image-preview-description" className="sr-only">{alt}</p>
+      <button className="editor-close" aria-label="Закрыть просмотр" onClick={onClose}><X /></button>
+      <img
+        className="fullscreen-image"
+        src={src}
+        alt={alt}
+        style={{ transform }}
+        onClick={(event) => event.stopPropagation()}
+      />
+    </div>
+  );
 }
 
 export type Role = "teacher" | "student";
@@ -297,9 +342,9 @@ const Metric = ({
   </article>
 );
 export function TeacherDashboard() {
+  const { data: dashboard } = useTeacherDashboard();
   const { data: profile } = useCurrentProfile();
   const { data: students = [] } = useStudents();
-  const { data: assignments = [] } = useAssignments();
   const { data: lessons = [] } = useLessons();
   const { data: notifications = [] } = useNotifications();
   const today = new Intl.DateTimeFormat("ru-RU", {
@@ -331,45 +376,42 @@ export function TeacherDashboard() {
       <section className="metrics">
         <Metric
           value={
-            assignments.filter((a) => a.status === "Ожидает проверки").length
+            dashboard?.awaitingReviewCount ?? 0
           }
           label="Ожидают проверки"
           tone="warm"
         />
         <Metric
-          value={assignments.filter((a) => a.status === "Просрочено").length}
+          value={dashboard?.overdueCount ?? 0}
           label="Не сдали в срок"
           tone="danger"
         />
         <Metric
-          value={assignments.filter((a) => isDay(a.deadlineAt, now)).length}
+          value={dashboard?.deadlineTodayCount ?? 0}
           label="Дедлайн сегодня"
           tone="warm"
         />
         <Metric
           value={
-            assignments.filter((a) => isDay(a.deadlineAt, tomorrow)).length
+            dashboard?.deadlineTomorrowCount ?? 0
           }
           label="Дедлайн завтра"
         />
         <Metric
-          value={lessons.filter((lesson) => isDay(lesson.startsAt, now)).length}
+          value={dashboard?.lessonsTodayCount ?? 0}
           label="Занятия сегодня"
         />
-        <Metric value={unreadResults} label="Новых результатов тестов" />
+        <Metric value={dashboard?.newAutomaticResultsCount ?? unreadResults} label="Новых результатов тестов" />
         <Metric
           value={
-            notifications.filter(
-              (item) => !item.readAt && item.kind === "submission",
-            ).length
+            dashboard?.newPhotoSubmissionsCount ?? 0
           }
           label="Недавно загруженные фотографии"
         />
         <Metric
           value={Math.max(
             0,
-            students.length -
-              new Set(lessons.map((lesson) => lesson.studentName)).size,
+            dashboard?.studentsWithoutFutureLessonCount ?? students.length,
           )}
           label="Без ближайшего занятия"
           tone="danger"
@@ -1209,7 +1251,7 @@ export function HomeworkBuilder() {
     { id: crypto.randomUUID(), prompt: "", answers: [""] },
   ]);
   const [manualTasks, setManualTasks] = useState([
-    { id: crypto.randomUUID(), prompt: "" },
+    { id: crypto.randomUUID(), prompt: "", maxPoints: 2 },
   ]);
   const [deadline, setDeadline] = useState("");
   const [subjectId, setSubjectId] = useState("");
@@ -1240,11 +1282,11 @@ export function HomeworkBuilder() {
     );
     setManualTasks(
       editor.manualTasks.length
-        ? editor.manualTasks.map((prompt) => ({
+        ? editor.manualTasks.map((task) => ({
             id: crypto.randomUUID(),
-            prompt,
+            ...task,
           }))
-        : [{ id: crypto.randomUUID(), prompt: "" }],
+        : [{ id: crypto.randomUUID(), prompt: "", maxPoints: 2 }],
     );
   }, [editor]);
   const valid = Boolean(
@@ -1255,7 +1297,7 @@ export function HomeworkBuilder() {
       attempts,
       studentIds,
       questions,
-      manualTasks: manualTasks.map((task) => task.prompt),
+      manualTasks,
     }).length === 0,
   );
   const move = <T,>(items: T[], from: number, to: number) => {
@@ -1275,7 +1317,7 @@ export function HomeworkBuilder() {
     subjectId,
     topicId,
     questions: questions.map(({ prompt, answers }) => ({ prompt, answers })),
-    manualTasks: manualTasks.map((task) => task.prompt),
+    manualTasks: manualTasks.map(({ prompt, maxPoints }) => ({ prompt, maxPoints })),
   });
   return (
     <>
@@ -1306,7 +1348,7 @@ export function HomeworkBuilder() {
                 prompt,
                 answers: answers.filter((value) => value.trim()),
               })),
-              manualTasks: manualTasks.map((task) => task.prompt),
+              manualTasks: manualTasks.map(({ prompt, maxPoints }) => ({ prompt, maxPoints })),
               instructions,
               deadline,
               attempts,
@@ -1362,9 +1404,9 @@ export function HomeworkBuilder() {
                     })),
                   );
                   setManualTasks(
-                    value.manualTasks.map((prompt) => ({
+                    value.manualTasks.map((task) => ({
                       id: crypto.randomUUID(),
-                      prompt,
+                      ...(typeof task === "string" ? { prompt: task, maxPoints: 2 } : task),
                     })),
                   );
                 }}
@@ -1405,9 +1447,9 @@ export function HomeworkBuilder() {
                     })),
                   );
                   setManualTasks(
-                    value.manualTasks.map((prompt) => ({
+                    value.manualTasks.map((task) => ({
                       id: crypto.randomUUID(),
-                      prompt,
+                      ...(typeof task === "string" ? { prompt: task, maxPoints: 2 } : task),
                     })),
                   );
                 }}
@@ -1704,13 +1746,15 @@ export function HomeworkBuilder() {
           <section className="panel form-panel">
             <div className="panel-head">
               <h2>Фото-решение</h2>
-              <span>Максимум: {manualTasks.length * 2}</span>
+              <span>
+                Максимум: {manualTasks.reduce((sum, task) => sum + task.maxPoints, 0)}
+              </span>
             </div>
-            <p>Каждая письменная задача оценивается строго от 0 до 2 баллов.</p>
+            <p>Для каждой задачи задайте максимум от 1 до 20 баллов.</p>
             {manualTasks.map((task, index) => (
               <article className="builder-item" key={task.id}>
                 <div className="panel-head">
-                  <h3>Задача {index + 1} · 2 балла</h3>
+                  <h3>Задача {index + 1} · максимум {task.maxPoints}</h3>
                   <div className="image-actions">
                     <button
                       type="button"
@@ -1760,6 +1804,25 @@ export function HomeworkBuilder() {
                     }
                   />
                 </label>
+                <label>
+                  Максимальный балл
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    required
+                    value={task.maxPoints}
+                    onChange={(event) =>
+                      setManualTasks(
+                        manualTasks.map((item) =>
+                          item.id === task.id
+                            ? { ...item, maxPoints: Number(event.target.value) }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                </label>
               </article>
             ))}
             <button
@@ -1768,7 +1831,7 @@ export function HomeworkBuilder() {
               onClick={() =>
                 setManualTasks([
                   ...manualTasks,
-                  { id: crypto.randomUUID(), prompt: "" },
+                  { id: crypto.randomUUID(), prompt: "", maxPoints: 2 },
                 ])
               }
             >
@@ -2193,13 +2256,22 @@ export function TestAttempt() {
                 setSubmitError("");
                 setSubmitting(true);
                 try {
-                  const result = await submitAttempt(assignmentKey, answers);
+                  const userId = data?.studentId ?? "demo";
+                  const keyName = `eclipse-submit:v1:${userId}:${assignmentKey}`;
+                  const idempotencyKey =
+                    localStorage.getItem(keyName) ?? crypto.randomUUID();
+                  localStorage.setItem(keyName, idempotencyKey);
+                  const result = await submitAttempt(
+                    assignmentKey,
+                    answers,
+                    idempotencyKey,
+                  );
                   if (result) {
                     setSubmittedScore({
                       score: result.score,
                       maximum: result.maximum_score,
                     });
-                    navigate(`/student/results/${result.attempt_id}`);
+                    navigate(`/student/homework/${assignmentKey}/result`);
                   } else setDone(true);
                 } catch {
                   setSubmitError(
@@ -2237,6 +2309,54 @@ export function TestAttempt() {
             </p>
           )}
         </div>
+      </section>
+    </>
+  );
+}
+
+export function AssignmentResultPage() {
+  const { assignmentId = "" } = useParams();
+  const teacher = useLocation().pathname.startsWith("/teacher");
+  const { data, isLoading, error } = useAssignmentResult(assignmentId);
+  if (isLoading)
+    return <section className="panel empty" role="status">Загрузка результата…</section>;
+  if (error || !data)
+    return <section className="panel empty form-error" role="alert">Результат не найден или у вас нет доступа.</section>;
+  const manualAction = data.status === "returned" ? "Отправить новую версию" : "Загрузить письменное решение";
+  return (
+    <>
+      <PageTitle eyebrow="ИТОГ ЗАДАНИЯ" title={data.title} />
+      <section className="panel result">
+        {data.automatic_maximum > 0 && (
+          <p>Автоматическая часть: <strong>{data.automatic_score} из {data.automatic_maximum}</strong></p>
+        )}
+        {data.status === "manual_pending" && (
+          <p>Письменная часть ещё не отправлена</p>
+        )}
+        {data.status === "awaiting_review" && (
+          <>
+            <p>Письменная часть ожидает проверки преподавателем</p>
+            <p>Итоговый результат появится после проверки.</p>
+          </>
+        )}
+        {data.status === "returned" && (
+          <p>Преподаватель вернул решение на повторную сдачу</p>
+        )}
+        {data.status === "reviewed" && (
+          <>
+            <p>Письменная часть: <strong>{data.manual_score} из {data.manual_maximum}</strong></p>
+            <strong>Итог: {data.total_score} из {data.total_maximum} · {data.percentage}%</strong>
+          </>
+        )}
+        <p>Использовано попыток: {data.attempts_used} из {data.attempts_allowed}</p>
+        {!teacher && ["manual_pending", "returned"].includes(data.status) && (
+          <Link className="button" to={`/student/homework/${assignmentId}/photos`}>{manualAction}</Link>
+        )}
+        {data.best_attempt_id && (
+          <Link className="button secondary" to={`/${teacher ? "teacher" : "student"}/results/${data.best_attempt_id}`}>
+            Подробный разбор лучшей попытки
+          </Link>
+        )}
       </section>
     </>
   );
@@ -2749,27 +2869,30 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
           {data.tasks.map((task) => (
             <fieldset key={task.id}>
               <legend>
-                {task.position}. {task.prompt}
+                {task.position}. {task.prompt} · максимум {task.maxPoints} баллов
               </legend>
-              <div className="score-buttons">
-                {[0, 1, 2].map((value) => (
-                  <button
-                    type="button"
-                    className={scores[task.id] === value ? "selected" : ""}
-                    aria-pressed={scores[task.id] === value}
-                    onClick={() => setScores({ ...scores, [task.id]: value })}
-                    key={value}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
+              <label>
+                Баллы
+                <input
+                  type="number"
+                  min="0"
+                  max={task.maxPoints}
+                  step="1"
+                  value={scores[task.id] ?? ""}
+                  onChange={(event) =>
+                    setScores({
+                      ...scores,
+                      [task.id]: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
             </fieldset>
           ))}
           <p>
             Письменная часть:{" "}
             {Object.values(scores).reduce((sum, value) => sum + value, 0)} из{" "}
-            {data.tasks.length * 2}
+            {data.tasks.reduce((sum, task) => sum + task.maxPoints, 0)}
           </p>
           <button
             className="button"
@@ -2857,29 +2980,12 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
         </div>
       </section>
       {fullscreen && image && (
-        <div
-          className="editor-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Страница ${page + 1} из ${data.images.length}`}
-          onClick={() => setFullscreen(false)}
-        >
-          <button
-            className="editor-close"
-            aria-label="Закрыть просмотр"
-            onClick={() => setFullscreen(false)}
-          >
-            <X />
-          </button>
-          <img
-            className="fullscreen-image"
-            src={image.processedUrl}
-            alt={`Страница ${page + 1}`}
-            style={{
-              transform: `scale(${viewZoom}) rotate(${viewRotation}deg)`,
-            }}
-          />
-        </div>
+        <FullscreenImageDialog
+          src={image.processedUrl}
+          alt={`Страница ${page + 1} из ${data.images.length}`}
+          transform={`scale(${viewZoom}) rotate(${viewRotation}deg)`}
+          onClose={() => setFullscreen(false)}
+        />
       )}
     </>
   );
@@ -2893,6 +2999,8 @@ export function PhotoSubmission() {
       rotation: number;
       width: number;
       height: number;
+      processedBlob: Blob | null;
+      cropMetadata: Record<string, number>;
     }[]
   >([]);
   const [sent, setSent] = useState(false);
@@ -2948,14 +3056,7 @@ export function PhotoSubmission() {
                 15 - files.length,
               );
               e.target.value = "";
-              const valid = selected.filter(
-                (file) =>
-                  file.size > 0 &&
-                  file.size <= 20 * 1024 * 1024 &&
-                  /image\/(jpeg|png|webp|heic|heif)/i.test(
-                    file.type || `image/${file.name.split(".").pop()}`,
-                  ),
-              );
+              const valid = selected.filter(validateImage);
               if (valid.length !== selected.length)
                 setUploadError(
                   "Некоторые файлы пропущены: разрешены изображения до 20 МБ.",
@@ -3017,7 +3118,10 @@ export function PhotoSubmission() {
                       onChange={async (e) => {
                         const replacement = e.target.files?.[0];
                         e.target.value = "";
-                        if (!replacement) return;
+                        if (!replacement || !validateImage(replacement)) {
+                          setUploadError("Файл не поддерживается или превышает 20 МБ.");
+                          return;
+                        }
                         try {
                           const next = await imageInfo(replacement);
                           URL.revokeObjectURL(item.url);
@@ -3094,6 +3198,7 @@ export function PhotoSubmission() {
                     width: processed.width,
                     height: processed.height,
                     rotation: item.rotation,
+                    crop: item.cropMetadata,
                   };
                 }),
               );
@@ -3153,7 +3258,15 @@ export function PhotoSubmission() {
               const url = URL.createObjectURL(blob);
               setFiles(
                 files.map((item, index) =>
-                  index === editing ? { ...item, url, rotation: 0 } : item,
+                  index === editing
+                    ? {
+                        ...item,
+                        url,
+                        processedBlob: blob,
+                        cropMetadata: { edited: 1 },
+                        rotation: 0,
+                      }
+                    : item,
                 ),
               );
               URL.revokeObjectURL(old);
@@ -3163,27 +3276,12 @@ export function PhotoSubmission() {
         </Suspense>
       )}
       {previewing !== null && files[previewing] && (
-        <div
-          className="editor-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Просмотр страницы ${previewing + 1}`}
-          onClick={() => setPreviewing(null)}
-        >
-          <button
-            className="editor-close"
-            aria-label="Закрыть просмотр"
-            onClick={() => setPreviewing(null)}
-          >
-            <X />
-          </button>
-          <img
-            className="fullscreen-image"
-            src={files[previewing].url}
-            alt={`Страница ${previewing + 1}`}
-            style={{ transform: `rotate(${files[previewing].rotation}deg)` }}
-          />
-        </div>
+        <FullscreenImageDialog
+          src={files[previewing].url}
+          alt={`Страница ${previewing + 1}`}
+          transform={`rotate(${files[previewing].rotation}deg)`}
+          onClose={() => setPreviewing(null)}
+        />
       )}
     </>
   );

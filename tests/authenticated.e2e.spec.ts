@@ -44,3 +44,23 @@ test("student A cannot open student B assignment URL", async ({ page }) => {
   await page.goto("/student/homework/53000000-0000-0000-0000-000000000003");
   await expect(page.getByText("Не удалось открыть задание.")).toBeVisible();
 });
+
+test("student sees the durable combined result", async ({ page }) => {
+  await login(page, "anna");
+  await page.goto(
+    "/student/homework/53000000-0000-0000-0000-000000000004/result",
+  );
+  await expect(page.getByText("Автоматическая часть:")).toContainText("1 из 1");
+  await expect(page.getByText("Письменная часть:")).toContainText("2 из 4");
+  await expect(page.getByText(/Итог: 3 из 5/)).toBeVisible();
+});
+
+test("calendar loads lessons beyond fourteen days", async ({ page }) => {
+  await login(page, "anna");
+  await page.goto("/student/calendar");
+  const next = page.getByRole("button", { name: "next" });
+  await next.click();
+  await next.click();
+  await next.click();
+  await expect(page.getByText("Анна Волкова")).toBeVisible();
+});

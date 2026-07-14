@@ -64,8 +64,10 @@ export const notificationKey = (
   entityId: string,
   occurrence = "",
 ) => `${kind}:${entityId}:${occurrence}`;
-export const manualMaximum = (taskCount: number) =>
-  Math.max(0, Math.trunc(taskCount)) * 2;
+export const manualMaximum = (tasks: number | number[]) =>
+  Array.isArray(tasks)
+    ? tasks.reduce((sum, points) => sum + Math.max(0, Math.trunc(points)), 0)
+    : Math.max(0, Math.trunc(tasks)) * 2;
 export const effectiveDeadline = (
   deadline: string | Date,
   extensions: (string | Date)[] = [],
@@ -97,7 +99,7 @@ export type HomeworkValidationInput = {
   attempts: number;
   studentIds: string[];
   questions: { prompt: string; answers: string[] }[];
-  manualTasks: string[];
+  manualTasks: { prompt: string; maxPoints: number }[];
 };
 
 export const validateHomework = (input: HomeworkValidationInput) => {
@@ -123,7 +125,13 @@ export const validateHomework = (input: HomeworkValidationInput) => {
   if (
     input.mode !== "automatic" &&
     (!input.manualTasks.length ||
-      input.manualTasks.some((task) => !task.trim()))
+      input.manualTasks.some(
+        (task) =>
+          !task.prompt.trim() ||
+          !Number.isInteger(task.maxPoints) ||
+          task.maxPoints < 1 ||
+          task.maxPoints > 20,
+      ))
   )
     errors.push("Заполните письменные задачи");
   return errors;

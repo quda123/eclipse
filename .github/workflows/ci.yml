@@ -42,4 +42,10 @@ jobs:
         shell: bash
         run: |
           eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY)=')"
+          curl --fail-with-body --silent --show-error \
+            "$API_URL/auth/v1/token?grant_type=password" \
+            -H "apikey: $ANON_KEY" \
+            -H "Content-Type: application/json" \
+            --data '{"email":"teacher@users.eclipse.local","password":"Eclipse-demo-2026"}' \
+            >/dev/null
           ECLIPSE_BACKEND_E2E=1 VITE_SUPABASE_URL="$API_URL" VITE_SUPABASE_ANON_KEY="$ANON_KEY" pnpm exec playwright test tests/authenticated.e2e.spec.ts --project=desktop --workers=1

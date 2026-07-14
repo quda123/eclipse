@@ -10,6 +10,14 @@ async function login(page: import("@playwright/test").Page, username: string) {
   await page.getByLabel("Логин").fill(username);
   await page.getByLabel("Пароль").fill("Eclipse-demo-2026");
   await page.getByRole("button", { name: "Продолжить" }).click();
+  await page.waitForTimeout(500);
+  if (new URL(page.url()).pathname === "/login") {
+    const message = await page
+      .getByRole("alert")
+      .textContent()
+      .catch(() => "форма не показала ошибку");
+    throw new Error(`Вход ${username} не выполнен: ${message}`);
+  }
 }
 
 test("real teacher session is invalidated on logout and cannot read another tenant student", async ({

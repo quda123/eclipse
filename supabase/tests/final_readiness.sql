@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(15);
+select plan(16);
 
 select is((select sum(max_points)::int from public.manual_tasks where homework_version_id='51000000-0000-0000-0000-000000000002'),5,'manual maximum is the sum of variable task maximums');
 select is((select max_points from public.manual_tasks where homework_version_id='51000000-0000-0000-0000-000000000003'),4,'published task preserves its maximum');
@@ -30,10 +30,10 @@ select lives_ok($$
 $$,'server creates the attempt');
 select lives_ok($$select * from public.submit_attempt((select assignment_id from first_start),'{}','9b000000-0000-0000-0000-000000000001')$$,'lost-response retry returns the same attempt');
 select is((select count(*)::int from public.attempts where assignment_id=(select assignment_id from first_start)),1,'idempotent retry consumes one attempt');
-select is((select count(*)::int from public.notifications where dedupe_key like 'attempt:%' and href like '/teacher/homework/%/result'),1,'idempotent retry creates one teacher notification');
 select is((select result_status::text from public.assignment_results where assignment_id=(select assignment_id from first_start)),'automatic_complete','official result updates after submission');
 
 select set_config('request.jwt.claims','{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
+select is((select count(*)::int from public.notifications where dedupe_key like 'attempt:%' and href like '/teacher/homework/%/result'),1,'idempotent retry creates one teacher notification');
 select throws_ok($$update public.manual_task_scores set points=5 where submission_id='56000000-0000-0000-0000-000000000001'$$,'P0001','invalid_score','database rejects score above task maximum');
 select is((select count(*)::int from public.notifications where href !~ '^/(student|teacher)/(calendar|notifications|review($|/)|homework/[0-9a-f-]+($|/(photos|result))|results/[0-9a-f-]+|students($|/[0-9a-f-]+)|homework($|/new|/[0-9a-f-]+/(edit|preview))|settings|profile)$'),0,'all notification hrefs map to registered protected routes');
 

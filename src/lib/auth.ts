@@ -11,10 +11,12 @@ export async function signInWithUsername(username: string, password: string) {
   if (profileError || profile?.status !== 'active') { await supabase.auth.signOut(); throw new Error('Аккаунт недоступен') }
   const { data: membership, error: membershipError } = await supabase.from('organization_members').select('role').eq('user_id', data.user.id).limit(1).maybeSingle()
   if (membershipError || !membership) { await supabase.auth.signOut(); throw new Error('Для аккаунта не настроена роль') }
+  sessionStorage.removeItem('eclipse:signed-out')
   return { user: data.user, profile, role: membership?.role as 'owner' | 'teacher' | 'student' }
 }
 
 export async function currentRole() {
+  if (sessionStorage.getItem('eclipse:signed-out')) return null
   if (!supabase) return null
   const { data: { user }, error: userError } = await supabase.auth.getUser()
   if (userError) throw new Error('Не удалось проверить сессию')

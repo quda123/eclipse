@@ -239,6 +239,7 @@ export function PortalLayout({ role }: { role: Role }) {
                 if (error) throw error;
               }
               clearDemoRole();
+              sessionStorage.setItem("eclipse:signed-out", "1");
               queryClient.clear();
               Object.keys(localStorage)
                 .filter((key) => key.startsWith("eclipse-attempt:"))

@@ -241,6 +241,13 @@ function RoleGuard({
     return () => data.subscription.unsubscribe();
   }, []);
   useEffect(() => {
+    const protectRestoredPage = () => {
+      if (sessionStorage.getItem("eclipse:signed-out")) setAllowed(false);
+    };
+    window.addEventListener("pageshow", protectRestoredPage);
+    return () => window.removeEventListener("pageshow", protectRestoredPage);
+  }, []);
+  useEffect(() => {
     let active = true;
     const demo = getDemoRole();
     if (demo) {

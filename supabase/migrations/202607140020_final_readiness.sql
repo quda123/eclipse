@@ -16,6 +16,7 @@ create unique index if not exists manual_task_scores_submission_task_idx on publ
 create or replace function public.validate_manual_task_score() returns trigger language plpgsql set search_path=public as $$
 declare maximum int;
 begin
+  if new.manual_task_id is null then return new; end if;
   select max_points into maximum from public.manual_tasks where id=new.manual_task_id;
   if maximum is null or new.points<0 or new.points>maximum then raise exception 'invalid_score'; end if;
   return new;
@@ -125,7 +126,7 @@ begin
   select count(*) into used from public.attempts where attempts.assignment_id=a.id;
   if used>=allowed then raise exception 'attempts_exhausted'; end if;
   insert into public.attempt_drafts(assignment_id,student_id,answers,started_at)
-    values(a.id,auth.uid(),'{}',now()) on conflict(assignment_id,student_id) do nothing;
+    values(a.id,auth.uid(),'{}',now()) on conflict on constraint attempt_drafts_assignment_id_student_id_key do nothing;
   update public.homework_assignments set status='in_progress' where id=a.id and status='not_started';
   return query select d.assignment_id,d.answers,d.started_at,d.updated_at from public.attempt_drafts d where d.assignment_id=a.id and d.student_id=auth.uid();
 end $$;

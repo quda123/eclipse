@@ -6,7 +6,7 @@ select plan(12);
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"20000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
 select is((select count(*)::int from public.profiles where id='20000000-0000-0000-0000-000000000001'),1,'student can read own profile after login');
-select is((select count(*)::int from public.organization_members where user_id='20000000-0000-0000-0000-000000000001' and role='student'),1,'student can resolve own role after login');
+select is((select count(*)::int from public.organization_members where user_id='20000000-0000-0000-0000-000000000001' and role='student'),2,'multi-organization student can read both own memberships');
 select is((select count(*)::int from public.profiles where id='20000000-0000-0000-0000-000000000002'),0,'student A cannot read student B profile');
 select is((select count(*)::int from public.homework_assignments where student_id='20000000-0000-0000-0000-000000000002'),0,'student A cannot read student B assignments');
 select is((select count(*)::int from public.attempts where student_id='20000000-0000-0000-0000-000000000002'),0,'student A cannot read student B attempts');

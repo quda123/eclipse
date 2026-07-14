@@ -106,8 +106,14 @@ test("teacher publishes combined homework and student reaches the written part",
   await page.getByLabel("Срок").fill(deadline.toISOString().slice(0, 16));
   await page.getByLabel("Условие").nth(0).fill("Сколько будет 1 + 1?");
   await page.getByRole("group", { name: "Принимаемые ответы" }).getByRole("textbox").fill("2");
-  await page.getByLabel("Условие").nth(1).fill("Покажите решение на бумаге");
-  await page.getByLabel("Максимальный балл").fill("3");
+  await page.getByLabel("Условие").nth(1).fill("Покажите решение первой задачи");
+  await page.getByLabel("Максимальный балл").nth(0).fill("2");
+  await page.getByRole("button", { name: "Добавить задачу" }).click();
+  await page.getByLabel("Условие").nth(2).fill("Покажите решение второй задачи");
+  await page.getByLabel("Максимальный балл").nth(1).fill("3");
+  await page.getByRole("button", { name: "Добавить задачу" }).click();
+  await page.getByLabel("Условие").nth(3).fill("Покажите решение третьей задачи");
+  await page.getByLabel("Максимальный балл").nth(2).fill("4");
   await page.getByLabel("Анна Волкова").check();
   await page.getByRole("button", { name: "Опубликовать" }).click();
   await expect(page).toHaveURL(/\/teacher\/homework$/);
@@ -142,13 +148,16 @@ test("teacher publishes combined homework and student reaches the written part",
   await login(page, "teacher");
   await page.goto("/teacher/review");
   await page.getByRole("link", { name: /E2E комбинированная работа/ }).click();
-  await page.getByLabel("Баллы").fill("2");
+  await page.getByLabel("Баллы").nth(0).fill("2");
+  await page.getByLabel("Баллы").nth(1).fill("1");
+  await page.getByLabel("Баллы").nth(2).fill("3");
   await page.getByRole("button", { name: "Завершить проверку" }).click();
   await expect(page).toHaveURL(/\/teacher\/review$/);
 
   await login(page, "anna");
   await page.goto(resultUrl);
-  await expect(page.getByText(/Итог: 3 из 4/)).toBeVisible();
+  await expect(page.getByText("Письменная часть:")).toContainText("6 из 9");
+  await expect(page.getByText(/Итог: 7 из 10/)).toBeVisible();
 });
 
 test("calendar loads lessons beyond fourteen days", async ({ page }) => {

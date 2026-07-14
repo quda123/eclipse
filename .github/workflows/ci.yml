@@ -42,7 +42,9 @@ jobs:
         shell: bash
         run: |
           eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY)=')"
-          supabase functions serve > /tmp/eclipse-functions.log 2>&1 &
+          # The functions validate the bearer token with auth.getUser themselves.
+          # Avoid the local gateway's legacy JWT verifier rejecting current local keys first.
+          ALLOWED_ORIGIN=http://127.0.0.1:5173 supabase functions serve --no-verify-jwt > /tmp/eclipse-functions.log 2>&1 &
           FUNCTIONS_PID=$!
           trap 'kill "$FUNCTIONS_PID" 2>/dev/null || true' EXIT
           for attempt in {1..30}; do

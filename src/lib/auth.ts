@@ -9,14 +9,21 @@ export async function signInWithUsername(username: string, password: string) {
   if (error) throw new Error('Неверный логин или пароль')
   const { data: profile, error: profileError } = await supabase.from('profiles').select('id,status,must_change_password').eq('id', data.user.id).single()
   if (profileError || profile?.status !== 'active') { await supabase.auth.signOut(); throw new Error('Аккаунт недоступен') }
-  const { data: membership } = await supabase.from('organization_members').select('role').eq('user_id', data.user.id).single()
+  const { data: membership, error: membershipError } = await supabase.from('organization_members').select('role').eq('user_id', data.user.id).limit(1).maybeSingle()
+  if (membershipError || !membership) { await supabase.auth.signOut(); throw new Error('Для аккаунта не настроена роль') }
   return { user: data.user, profile, role: membership?.role as 'owner' | 'teacher' | 'student' }
 }
 
 export async function currentRole() {
   if (!supabase) return null
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError) throw new Error('Не удалось проверить сессию')
   if (!user) return null
-  const { data } = await supabase.from('organization_members').select('role').eq('user_id', user.id).single()
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('status,must_change_password').eq('id', user.id).maybeSingle()
+  if (profileError) throw new Error('Не удалось загрузить профиль')
+  if (!profile || profile.status !== 'active') return 'archived' as const
+  if (profile.must_change_password) return 'password_change' as const
+  const { data, error } = await supabase.from('organization_members').select('role').eq('user_id', user.id).limit(1).maybeSingle()
+  if (error) throw new Error('Не удалось определить роль')
   return data?.role as 'owner' | 'teacher' | 'student' | undefined
 }

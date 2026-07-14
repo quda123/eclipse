@@ -231,6 +231,16 @@ function RoleGuard({
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [message, setMessage] = useState("");
   useEffect(() => {
+    if (!supabase) return;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setMessage("");
+        setAllowed(false);
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+  useEffect(() => {
     let active = true;
     const demo = getDemoRole();
     if (demo) {

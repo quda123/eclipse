@@ -42,6 +42,19 @@ jobs:
         shell: bash
         run: |
           eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY)=')"
+          supabase functions serve > /tmp/eclipse-functions.log 2>&1 &
+          FUNCTIONS_PID=$!
+          trap 'kill "$FUNCTIONS_PID" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --silent --output /dev/null "$API_URL/functions/v1/create-student"; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              cat /tmp/eclipse-functions.log
+              exit 1
+            fi
+            sleep 1
+          done
           AUTH_STATUS=$(curl --silent --show-error \
             --output /tmp/eclipse-auth-response.json \
             --write-out '%{http_code}' \

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(20);
+select plan(22);
 
 select is((select sum(max_points)::int from public.manual_tasks where homework_version_id='51000000-0000-0000-0000-000000000002'),5,'manual maximum is the sum of variable task maximums');
 select is((select max_points from public.manual_tasks where homework_version_id='51000000-0000-0000-0000-000000000003'),4,'published task preserves its maximum');
@@ -19,6 +19,8 @@ select is((select count(*)::int from public.homework_assignments a join public.h
 
 select set_config('request.jwt.claims','{"sub":"20000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
 select is(public.active_organization(),'30000000-0000-0000-0000-000000000001'::uuid,'active organization is deterministic with multiple memberships');
+select throws_ok($$update public.assignment_results set total_score=0 where assignment_id='53000000-0000-0000-0000-000000000001'$$,'42501',null,'student cannot modify official results');
+select is((select count(*)::int from public.assignment_results where student_id='20000000-0000-0000-0000-000000000002'),0,'student cannot read another student official results');
 create temporary table first_start as select * from public.start_or_resume_attempt_draft((select a.id from public.homework_assignments a join public.homework_versions v on v.id=a.homework_version_id where v.title='Финальная проверка'));
 create temporary table second_start as select * from public.start_or_resume_attempt_draft((select assignment_id from first_start));
 select is((select started_at from first_start),(select started_at from second_start),'refresh and another tab preserve started_at');

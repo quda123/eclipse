@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { RotateCw, X } from "lucide-react";
 
@@ -63,17 +63,49 @@ export default function ImageEditor({
   onClose: () => void;
   onSave: (blob: Blob) => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 }),
     [zoom, setZoom] = useState(1),
     [rotation, setRotation] = useState(0),
     [area, setArea] = useState<Area>(),
     [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusable = () => [
+      ...(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      ) ?? []),
+    ];
+    focusable()[0]?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0], last = items.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => {
+      document.removeEventListener("keydown", keydown);
+      document.body.style.overflow = overflow;
+      previous?.focus();
+    };
+  }, [onClose]);
   return (
     <div
+      ref={dialogRef}
       className="editor-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="editor-title"
+      aria-describedby="editor-description"
     >
       <section className="editor">
         <header>
@@ -82,6 +114,9 @@ export default function ImageEditor({
             <X />
           </button>
         </header>
+        <p id="editor-description" className="sr-only">
+          Обрежьте, поверните или масштабируйте изображение перед отправкой.
+        </p>
         <div className="crop-stage">
           <Cropper
             image={src}

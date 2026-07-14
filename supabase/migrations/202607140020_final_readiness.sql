@@ -385,6 +385,39 @@ returns jsonb language sql stable security definer set search_path=public as $$
   where a.student_id=auth.uid() and public.is_active_user()
 $$;
 
+create or replace function public.teacher_student_analytics(p_student uuid,p_days int default null)
+returns jsonb language plpgsql stable security definer set search_path=public as $$
+declare result jsonb;cutoff timestamptz:=case when p_days is null then '-infinity'::timestamptz else now()-(p_days||' days')::interval end;
+begin
+  if p_days is not null and p_days not in (7,30) then raise exception 'invalid_period'; end if;
+  if not public.is_linked_teacher(p_student) then raise exception 'forbidden'; end if;
+  with scoped as (
+    select a.*,v.title,v.mode,v.topic_id,coalesce(t.name,'Без темы') topic,public.assignment_deadline(a.id) effective_deadline,r.*,
+      coalesce(r.updated_at,public.assignment_deadline(a.id)) metric_at
+    from public.homework_assignments a join public.homework_versions v on v.id=a.homework_version_id
+    left join public.topics t on t.id=v.topic_id left join public.assignment_results r on r.assignment_id=a.id
+    where a.student_id=p_student
+  ), period_assignments as (select * from scoped where metric_at>=cutoff)
+  select jsonb_build_object(
+    'summary',(select jsonb_build_object('assigned',count(*),'completed',count(*) filter(where result_status='reviewed' or (mode='automatic' and result_status='automatic_complete')),
+      'overdue',count(*) filter(where status not in ('submitted','reviewed') and effective_deadline<now()),'awaiting_review',count(*) filter(where result_status='awaiting_review'),
+      'reviewed',count(*) filter(where result_status='reviewed'),'completion_rate',case when count(*)=0 then 0 else round(100.0*count(*) filter(where result_status='reviewed' or (mode='automatic' and result_status='automatic_complete'))/count(*)) end) from period_assignments),
+    'history',(select coalesce(jsonb_agg(jsonb_build_object('assignment_id',id,'title',title,'topic',topic,'mode',mode,'deadline',deadline_at,
+      'effective_deadline',effective_deadline,'status',status,'attempts_used',(select count(*) from public.attempts x where x.assignment_id=period_assignments.id),
+      'best_score',automatic_score,'automatic_maximum',automatic_maximum,'submitted_at',updated_at) order by effective_deadline desc),'[]') from period_assignments),
+    'topics',(select coalesce(jsonb_agg(row_to_json(x)),'[]') from (select topic,count(*) assigned,
+      count(*) filter(where result_status='reviewed' or (mode='automatic' and result_status='automatic_complete')) completed,
+      count(*) filter(where result_status='reviewed') reviewed,count(*) filter(where result_status='awaiting_review') awaiting_review,
+      count(*) filter(where status not in ('submitted','reviewed') and effective_deadline<now()) overdue,
+      sum((select count(*) from public.attempts z where z.assignment_id=p.id))::int attempts,
+      coalesce(round(avg(percentage) filter(where result_status='reviewed' or (mode='automatic' and result_status='automatic_complete'))),0) average,
+      coalesce(max(percentage) filter(where result_status='reviewed' or (mode='automatic' and result_status='automatic_complete')),0) best
+      from period_assignments p group by topic order by topic)x),
+    'attempts',(select coalesce(jsonb_agg(jsonb_build_object('id',a.id,'assignment_id',a.assignment_id,'title',v.title,'attempt_number',a.attempt_number,'score',a.score,'maximum',a.maximum_score,'started_at',a.started_at,'submitted_at',a.submitted_at,'duration_seconds',a.duration_seconds) order by a.submitted_at desc),'[]') from public.attempts a join public.homework_assignments ha on ha.id=a.assignment_id join public.homework_versions v on v.id=ha.homework_version_id where a.student_id=p_student and a.submitted_at>=cutoff)
+  ) into result;
+  return result;
+end $$;
+
 revoke all on function public.create_homework_v2(text,public.homework_mode,timestamptz,int,uuid[],jsonb,jsonb,text,text,uuid,uuid,uuid,jsonb) from public;
 grant execute on function public.create_homework_v2(text,public.homework_mode,timestamptz,int,uuid[],jsonb,jsonb,text,text,uuid,uuid,uuid,jsonb) to authenticated;
 

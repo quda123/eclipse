@@ -1037,9 +1037,14 @@ export function StudentDetail() {
               extensionUntil,
               extensionReason,
             );
-            await queryClient.invalidateQueries({
-              queryKey: ["student-analytics", studentId],
-            });
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: ["student-analytics", studentId],
+              }),
+              queryClient.invalidateQueries({ queryKey: ["assignments"] }),
+              queryClient.invalidateQueries({ queryKey: ["student-dashboard"] }),
+              queryClient.invalidateQueries({ queryKey: ["teacher-dashboard"] }),
+            ]);
             setAccountMessage("Индивидуальный срок продлён.");
           } catch {
             setAccountMessage("Новый срок должен быть позже текущего.");
@@ -2003,6 +2008,7 @@ export function HomeworkBuilder() {
 
 export function TestAttempt() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const { assignmentId = "", id = "", attemptId = "" } = useParams();
   const assignmentKey = assignmentId || id || "functions";
@@ -2267,6 +2273,11 @@ export function TestAttempt() {
                     idempotencyKey,
                   );
                   if (result) {
+                    await Promise.all([
+                      queryClient.invalidateQueries({ queryKey: ["assignments"] }),
+                      queryClient.invalidateQueries({ queryKey: ["student-dashboard"] }),
+                      queryClient.invalidateQueries({ queryKey: ["assignment-result", assignmentKey] }),
+                    ]);
                     setSubmittedScore({
                       score: result.score,
                       maximum: result.maximum_score,
@@ -2903,7 +2914,13 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
           <button
             className="button"
             disabled={
-              busy || data.tasks.some((task) => scores[task.id] === undefined)
+              busy ||
+              data.tasks.some(
+                (task) =>
+                  !Number.isInteger(scores[task.id]) ||
+                  scores[task.id] < 0 ||
+                  scores[task.id] > task.maxPoints,
+              )
             }
             onClick={async () => {
               setBusy(true);
@@ -2913,6 +2930,11 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
                 await queryClient.invalidateQueries({
                   queryKey: ["review-queue"],
                 });
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ["assignments"] }),
+                  queryClient.invalidateQueries({ queryKey: ["teacher-dashboard"] }),
+                  queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+                ]);
                 navigate("/teacher/review");
               } catch {
                 setMessage("Не удалось сохранить оценку.");
@@ -2926,7 +2948,17 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
           <button
             type="button"
             className="button secondary"
-            disabled={busy || Object.keys(scores).length === 0}
+            disabled={
+              busy ||
+              Object.keys(scores).length === 0 ||
+              data.tasks.some(
+                (task) =>
+                  scores[task.id] !== undefined &&
+                  (!Number.isInteger(scores[task.id]) ||
+                    scores[task.id] < 0 ||
+                    scores[task.id] > task.maxPoints),
+              )
+            }
             onClick={async () => {
               setBusy(true);
               setMessage("");
@@ -2998,6 +3030,7 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
 }
 export function PhotoSubmission() {
   const { assignmentId = "" } = useParams();
+  const queryClient = useQueryClient();
   const [files, setFiles] = useState<
     {
       file: File;
@@ -3235,6 +3268,11 @@ export function PhotoSubmission() {
                           : "Ошибка",
                   })),
               );
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["assignments"] }),
+                queryClient.invalidateQueries({ queryKey: ["student-dashboard"] }),
+                queryClient.invalidateQueries({ queryKey: ["assignment-result", assignmentId] }),
+              ]);
               setSent(true);
             } catch {
               setUploadError(

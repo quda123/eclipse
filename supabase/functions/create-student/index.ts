@@ -43,12 +43,12 @@ Deno.serve(async (request) => {
   const rollback = async () => { await admin.auth.admin.deleteUser(studentId) }
 
   const { error: profileError } = await admin.from('profiles').insert({ id: studentId, username, first_name: firstName, last_name: lastName, class_name: className, must_change_password: true })
-  if (profileError) { await rollback(); return json({ error: 'Не удалось создать профиль' }, 500) }
+  if (profileError) { console.error('create-student profile insert failed', profileError); await rollback(); return json({ error: 'Не удалось создать профиль' }, 500) }
   const { error: membershipError } = await admin.from('organization_members').insert({ organization_id: member.organization_id, user_id: studentId, role: 'student' })
-  if (membershipError) { await rollback(); return json({ error: 'Не удалось добавить ученика в организацию' }, 500) }
+  if (membershipError) { console.error('create-student membership insert failed', membershipError); await rollback(); return json({ error: 'Не удалось добавить ученика в организацию' }, 500) }
   const { error: linkError } = await admin.from('teacher_student_links').insert({ organization_id: member.organization_id, teacher_id: user.id, student_id: studentId, subject: subject || 'Математика' })
-  if (linkError) { await rollback(); return json({ error: 'Не удалось связать ученика с преподавателем' }, 500) }
+  if (linkError) { console.error('create-student teacher link insert failed', linkError); await rollback(); return json({ error: 'Не удалось связать ученика с преподавателем' }, 500) }
   const { error: auditError } = await admin.from('audit_logs').insert({ organization_id: member.organization_id, actor_id: user.id, action: 'student_created', entity_type: 'profile', entity_id: studentId, metadata: { username } })
-  if (auditError) { await rollback(); return json({ error: 'Не удалось завершить создание ученика' }, 500) }
+  if (auditError) { console.error('create-student audit insert failed', auditError); await rollback(); return json({ error: 'Не удалось завершить создание ученика' }, 500) }
   return json({ id: studentId, username }, 201)
 })

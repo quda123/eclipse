@@ -13,7 +13,6 @@ update auth.users set
   recovery_token='',
   email_change_token_new='',
   email_change='',
-  phone='',
   phone_change='',
   phone_change_token='',
   email_change_token_current='',

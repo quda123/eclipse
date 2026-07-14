@@ -69,4 +69,7 @@ jobs:
             docker logs supabase_auth_eclipse --tail 100
             exit 1
           fi
-          ECLIPSE_BACKEND_E2E=1 VITE_SUPABASE_URL="$API_URL" VITE_SUPABASE_ANON_KEY="$ANON_KEY" pnpm exec playwright test tests/authenticated.e2e.spec.ts --project=desktop --workers=1
+          if ! ECLIPSE_BACKEND_E2E=1 VITE_SUPABASE_URL="$API_URL" VITE_SUPABASE_ANON_KEY="$ANON_KEY" pnpm exec playwright test tests/authenticated.e2e.spec.ts --project=desktop --workers=1; then
+            cat /tmp/eclipse-functions.log
+            exit 1
+          fi

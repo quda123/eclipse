@@ -38,7 +38,14 @@ test("teacher creates a student who changes the temporary password", async ({
   await page.getByLabel("Фамилия").fill("Тестова");
   await page.getByLabel("Логин").fill("e2e.student");
   const temporaryPassword = await page.getByLabel("Временный пароль").inputValue();
+  const creationResponse = page.waitForResponse((response) =>
+    response.url().includes("/functions/v1/create-student"),
+  );
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
+  const response = await creationResponse;
+  if (!response.ok()) {
+    throw new Error(`create-student ${response.status()}: ${await response.text()}`);
+  }
   await expect(page.getByText("Елена Тестова")).toBeVisible();
 
   await loginWithPassword(page, "e2e.student", temporaryPassword);

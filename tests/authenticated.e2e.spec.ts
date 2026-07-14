@@ -6,9 +6,17 @@ test.skip(
 );
 
 async function login(page: import("@playwright/test").Page, username: string) {
+  return loginWithPassword(page, username, "Eclipse-demo-2026");
+}
+
+async function loginWithPassword(
+  page: import("@playwright/test").Page,
+  username: string,
+  password: string,
+) {
   await page.goto("/login");
   await page.getByLabel("Логин").fill(username);
-  await page.getByLabel("Пароль").fill("Eclipse-demo-2026");
+  await page.getByLabel("Пароль").fill(password);
   await page.getByRole("button", { name: "Продолжить" }).click();
   await page.waitForTimeout(500);
   if (new URL(page.url()).pathname === "/login") {
@@ -19,6 +27,37 @@ async function login(page: import("@playwright/test").Page, username: string) {
     throw new Error(`Вход ${username} не выполнен: ${message}`);
   }
 }
+
+test("teacher creates a student who changes the temporary password", async ({
+  page,
+}) => {
+  await login(page, "teacher");
+  await page.goto("/teacher/students");
+  await page.getByRole("button", { name: "Добавить ученика" }).click();
+  await page.getByLabel("Имя").fill("Елена");
+  await page.getByLabel("Фамилия").fill("Тестова");
+  await page.getByLabel("Логин").fill("e2e.student");
+  const temporaryPassword = await page.getByLabel("Временный пароль").inputValue();
+  await page.getByRole("button", { name: "Создать аккаунт" }).click();
+  await expect(page.getByText("Елена Тестова")).toBeVisible();
+
+  await loginWithPassword(page, "e2e.student", temporaryPassword);
+  await expect(page).toHaveURL(/\/change-password$/);
+  const nextPassword = "New-Eclipse-2026!";
+  await page.getByLabel("Новый пароль").fill(nextPassword);
+  await page.getByLabel("Повторите пароль").fill(nextPassword);
+  await page.getByRole("button", { name: "Сохранить пароль" }).click();
+  await expect(page).toHaveURL(/\/student$/);
+  await page.getByRole("button", { name: "Выйти" }).click();
+
+  await page.goto("/login");
+  await page.getByLabel("Логин").fill("e2e.student");
+  await page.getByLabel("Пароль").fill(temporaryPassword);
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await expect(page.getByRole("alert")).toContainText("Неверный логин или пароль");
+  await loginWithPassword(page, "e2e.student", nextPassword);
+  await expect(page).toHaveURL(/\/student$/);
+});
 
 test("real teacher session is invalidated on logout and cannot read another tenant student", async ({
   page,

@@ -713,7 +713,7 @@ export function StudentDetail() {
   const [extensionAssignment, setExtensionAssignment] = useState(""),
     [extensionUntil, setExtensionUntil] = useState(""),
     [extensionReason, setExtensionReason] = useState("");
-  const s = data.find((student) => student.id === studentId) ?? data[0];
+  const s = data.find((student) => student.id === studentId);
   const queryClient = useQueryClient();
   const [className, setClassName] = useState("");
   const [zoomUrl, setZoomUrl] = useState("");

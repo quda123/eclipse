@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(8);
+select plan(10);
 
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"20000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
@@ -34,6 +34,13 @@ select is((select count(*)::int from public.submission_images where submission_i
 select is((select count(*)::int from public.notifications where dedupe_key='submission:'||(select submission_version_id from test_submission)::text),1,'teacher receives one deduplicated review notification');
 
 select set_config('request.jwt.claims','{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
+select lives_ok($$
+  select public.save_manual_review(
+    (select submission_id from test_submission),
+    (select jsonb_build_object(id::text,1) from public.manual_tasks where homework_version_id='51000000-0000-0000-0000-000000000002' and position=1)
+  )
+$$,'teacher saves a partial review draft');
+select is((select points from public.manual_task_scores where submission_id=(select submission_id from test_submission) and task_number=1),1,'partial score persists for reopening');
 select lives_ok($$
   select * from public.grade_manual_submission(
     (select submission_id from test_submission),

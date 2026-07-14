@@ -1159,6 +1159,7 @@ export type SubmissionDetail = {
   studentName: string;
   homeworkTitle: string;
   previousVersions: { id: string; version: number; submittedAt: string }[];
+  savedScores: Record<string, number>;
   images: {
     id: string;
     position: number;
@@ -1170,6 +1171,10 @@ export type SubmissionDetail = {
 };
 async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
   if (!supabase) throw new Error("Supabase не настроен");
+  const { error: beginError } = await supabase.rpc("begin_manual_review", {
+    p_submission: id,
+  });
+  if (beginError) throw beginError;
   const { data, error } = await supabase
     .from("manual_submissions")
     .select(
@@ -1186,6 +1191,11 @@ async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
     .not("submitted_at", "is", null)
     .order("version", { ascending: false });
   if (versionsError) throw versionsError;
+  const { data: storedScores, error: scoresError } = await supabase
+    .from("manual_task_scores")
+    .select("task_number,points")
+    .eq("submission_id", data.id);
+  if (scoresError) throw scoresError;
   const student = Array.isArray(data.student) ? data.student[0] : data.student;
   const assignment = Array.isArray(data.assignment)
     ? data.assignment[0]
@@ -1195,6 +1205,12 @@ async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
       ? assignment.homework_versions[0]
       : assignment.homework_versions
     : null;
+  const tasks = [...(version?.manual_tasks ?? [])].sort(
+    (a, b) => a.position - b.position,
+  );
+  const scoreByPosition = new Map(
+    (storedScores ?? []).map((score) => [score.task_number, score.points]),
+  );
   const images = await Promise.all(
     [...(data.submission_images ?? [])]
       .sort((a, b) => a.position - b.position)
@@ -1229,10 +1245,13 @@ async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
       version: item.version,
       submittedAt: item.submitted_at!,
     })),
-    images,
-    tasks: [...(version?.manual_tasks ?? [])].sort(
-      (a, b) => a.position - b.position,
+    savedScores: Object.fromEntries(
+      tasks
+        .filter((task) => scoreByPosition.has(task.position))
+        .map((task) => [task.id, scoreByPosition.get(task.position)!]),
     ),
+    images,
+    tasks,
   };
 }
 export const useSubmissionDetail = (id: string) =>
@@ -1252,6 +1271,17 @@ export async function gradeSubmission(
   });
   if (error) throw error;
   return data?.[0];
+}
+export async function saveSubmissionReview(
+  id: string,
+  scores: Record<string, number>,
+) {
+  if (!supabase) throw new Error("Supabase не настроен");
+  const { error } = await supabase.rpc("save_manual_review", {
+    p_submission: id,
+    p_scores: scores,
+  });
+  if (error) throw error;
 }
 export async function returnSubmission(id: string) {
   if (!supabase) throw new Error("Supabase не настроен");

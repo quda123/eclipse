@@ -44,6 +44,7 @@ import {
   saveAttemptDraft,
   saveHomeworkDraft,
   saveHomeworkTemplate,
+  saveSubmissionReview,
   saveTeacherNote,
   submitAttempt,
   uploadManualSubmission,
@@ -2575,6 +2576,9 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
   const [viewZoom, setViewZoom] = useState(1);
   const [viewRotation, setViewRotation] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (data?.savedScores) setScores(data.savedScores);
+  }, [data]);
   if (isLoading)
     return (
       <section className="panel empty" role="status">
@@ -2788,6 +2792,25 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
             }}
           >
             {busy ? "Сохранение…" : "Завершить проверку"}
+          </button>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy || Object.keys(scores).length === 0}
+            onClick={async () => {
+              setBusy(true);
+              setMessage("");
+              try {
+                await saveSubmissionReview(submissionId, scores);
+                setMessage("Черновик оценки сохранён.");
+              } catch {
+                setMessage("Не удалось сохранить черновик оценки.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Сохранить и продолжить позже
           </button>
           <button
             type="button"

@@ -27,6 +27,39 @@ begin
   return query select s.id,sv,s.version,v.organization_id::text||'/'||v.teacher_id::text||'/'||auth.uid()::text||'/'||a.id::text||'/'||sv::text;
 end $$;
 
+create or replace function public.begin_manual_review(p_submission uuid)
+returns void language plpgsql security definer set search_path=public as $$
+declare s public.manual_submissions; a public.homework_assignments; v public.homework_versions;
+begin
+  if not public.is_active_user() then raise exception 'unauthorized'; end if;
+  select * into s from public.manual_submissions where id=p_submission and submitted_at is not null for update;
+  if not found then raise exception 'not_submitted'; end if;
+  select * into a from public.homework_assignments where id=s.assignment_id;
+  select * into v from public.homework_versions where id=a.homework_version_id;
+  if v.teacher_id<>auth.uid() then raise exception 'forbidden'; end if;
+  update public.manual_submissions set review_started_at=coalesce(review_started_at,now()) where id=s.id and reviewed_at is null;
+end $$;
+
+create or replace function public.save_manual_review(p_submission uuid,p_scores jsonb)
+returns void language plpgsql security definer set search_path=public as $$
+declare s public.manual_submissions; a public.homework_assignments; v public.homework_versions; entry record; task_position int; points int;
+begin
+  if not public.is_active_user() or jsonb_typeof(p_scores)<>'object' then raise exception 'invalid_request'; end if;
+  select * into s from public.manual_submissions where id=p_submission and submitted_at is not null and reviewed_at is null for update;
+  if not found then raise exception 'not_reviewable'; end if;
+  select * into a from public.homework_assignments where id=s.assignment_id;
+  select * into v from public.homework_versions where id=a.homework_version_id;
+  if v.teacher_id<>auth.uid() then raise exception 'forbidden'; end if;
+  for entry in select * from jsonb_each_text(p_scores) loop
+    select position into task_position from public.manual_tasks where id=entry.key::uuid and homework_version_id=v.id;
+    points:=entry.value::int;
+    if task_position is null or points not between 0 and 2 then raise exception 'invalid_score'; end if;
+    insert into public.manual_task_scores(submission_id,task_number,points) values(s.id,task_position,points)
+      on conflict(submission_id,task_number) do update set points=excluded.points;
+  end loop;
+  update public.manual_submissions set review_started_at=coalesce(review_started_at,now()) where id=s.id;
+end $$;
+
 create or replace function public.finalize_manual_submission(p_submission uuid,p_images jsonb)
 returns uuid language plpgsql security definer set search_path=public,storage as $$
 declare s public.manual_submissions; a public.homework_assignments; v public.homework_versions; sv uuid; item jsonb; pos int:=0;
@@ -90,7 +123,9 @@ end $$;
 revoke all on function public.begin_manual_submission(uuid) from public;
 revoke all on function public.finalize_manual_submission(uuid,jsonb) from public;
 revoke all on function public.grade_manual_submission(uuid,jsonb) from public;
-grant execute on function public.begin_manual_submission(uuid),public.finalize_manual_submission(uuid,jsonb),public.grade_manual_submission(uuid,jsonb) to authenticated;
+revoke all on function public.begin_manual_review(uuid) from public;
+revoke all on function public.save_manual_review(uuid,jsonb) from public;
+grant execute on function public.begin_manual_submission(uuid),public.finalize_manual_submission(uuid,jsonb),public.grade_manual_submission(uuid,jsonb),public.begin_manual_review(uuid),public.save_manual_review(uuid,jsonb) to authenticated;
 
 create or replace function public.return_manual_submission(p_submission uuid) returns void language plpgsql security definer set search_path=public as $$
 declare s public.manual_submissions;a public.homework_assignments;v public.homework_versions;

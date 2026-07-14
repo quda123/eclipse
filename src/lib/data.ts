@@ -1097,17 +1097,20 @@ export type ReviewQueueItem = {
   id: string;
   studentName: string;
   homeworkTitle: string;
+  topic: string;
   submittedAt: string;
   deadlineAt: string;
   imageCount: number;
   status: string;
+  reviewed: boolean;
+  overdue: boolean;
 };
 async function fetchReviewQueue(): Promise<ReviewQueueItem[]> {
   if (!supabase) throw new Error("Supabase не настроен");
   const { data, error } = await supabase
     .from("manual_submissions")
     .select(
-      "id,submitted_at,reviewed_at,student:profiles!manual_submissions_student_id_fkey(first_name,last_name),assignment:homework_assignments!manual_submissions_assignment_id_fkey(deadline_at,homework_versions(title)),submission_images(count)",
+      "id,submitted_at,reviewed_at,student:profiles!manual_submissions_student_id_fkey(first_name,last_name),assignment:homework_assignments!manual_submissions_assignment_id_fkey(deadline_at,homework_versions(title,topics(name))),submission_images(count)",
     )
     .not("submitted_at", "is", null)
     .order("submitted_at", { ascending: false })
@@ -1126,16 +1129,25 @@ async function fetchReviewQueue(): Promise<ReviewQueueItem[]> {
     const count = Array.isArray(row.submission_images)
       ? row.submission_images[0]?.count
       : 0;
+    const topic = version
+      ? Array.isArray(version.topics)
+        ? version.topics[0]
+        : version.topics
+      : null;
+    const deadlineAt = assignment?.deadline_at ?? row.submitted_at!;
     return {
       id: row.id,
       studentName: student
         ? `${student.first_name} ${student.last_name}`
         : "Ученик",
       homeworkTitle: version?.title ?? "Задание",
+      topic: topic?.name ?? "Без темы",
       submittedAt: row.submitted_at!,
-      deadlineAt: assignment?.deadline_at ?? row.submitted_at!,
+      deadlineAt,
       imageCount: Number(count ?? 0),
       status: row.reviewed_at ? "Проверено" : "Ожидает проверки",
+      reviewed: Boolean(row.reviewed_at),
+      overdue: new Date(row.submitted_at!) > new Date(deadlineAt),
     };
   });
 }
@@ -1146,6 +1158,7 @@ export type SubmissionDetail = {
   id: string;
   studentName: string;
   homeworkTitle: string;
+  previousVersions: { id: string; version: number; submittedAt: string }[];
   images: {
     id: string;
     position: number;
@@ -1160,11 +1173,19 @@ async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
   const { data, error } = await supabase
     .from("manual_submissions")
     .select(
-      "id,student:profiles!manual_submissions_student_id_fkey(first_name,last_name),assignment:homework_assignments!manual_submissions_assignment_id_fkey(homework_versions(id,title,manual_tasks(id,position,prompt))),submission_images(id,position,processed_path,original_path,original_name)",
+      "id,assignment_id,version,student:profiles!manual_submissions_student_id_fkey(first_name,last_name),assignment:homework_assignments!manual_submissions_assignment_id_fkey(homework_versions(id,title,manual_tasks(id,position,prompt))),submission_images(id,position,processed_path,original_path,original_name)",
     )
     .eq("id", id)
     .single();
   if (error) throw error;
+  const { data: versions, error: versionsError } = await supabase
+    .from("manual_submissions")
+    .select("id,version,submitted_at")
+    .eq("assignment_id", data.assignment_id)
+    .neq("id", data.id)
+    .not("submitted_at", "is", null)
+    .order("version", { ascending: false });
+  if (versionsError) throw versionsError;
   const student = Array.isArray(data.student) ? data.student[0] : data.student;
   const assignment = Array.isArray(data.assignment)
     ? data.assignment[0]
@@ -1203,6 +1224,11 @@ async function fetchSubmissionDetail(id: string): Promise<SubmissionDetail> {
       ? `${student.first_name} ${student.last_name}`
       : "Ученик",
     homeworkTitle: version?.title ?? "Задание",
+    previousVersions: (versions ?? []).map((item) => ({
+      id: item.id,
+      version: item.version,
+      submittedAt: item.submitted_at!,
+    })),
     images,
     tasks: [...(version?.manual_tasks ?? [])].sort(
       (a, b) => a.position - b.position,

@@ -2440,10 +2440,89 @@ export function NotificationsPage() {
 export function ReviewPage() {
   const { submissionId = "" } = useParams();
   const { data: queue = [], isLoading, error, refetch } = useReviewQueue();
+  const [studentFilter, setStudentFilter] = useState("");
+  const [homeworkFilter, setHomeworkFilter] = useState("");
+  const [topicFilter, setTopicFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [unreviewedOnly, setUnreviewedOnly] = useState(true);
   if (submissionId) return <SubmissionReview submissionId={submissionId} />;
+  const filteredQueue = queue.filter(
+    (item) =>
+      (!studentFilter || item.studentName === studentFilter) &&
+      (!homeworkFilter || item.homeworkTitle === homeworkFilter) &&
+      (!topicFilter || item.topic === topicFilter) &&
+      (!dateFilter || item.submittedAt.slice(0, 10) === dateFilter) &&
+      (!overdueOnly || item.overdue) &&
+      (!unreviewedOnly || !item.reviewed),
+  );
   return (
     <>
       <PageTitle eyebrow="РУЧНАЯ ПРОВЕРКА" title="Внимание к ходу решения." />
+      <section className="panel student-filters" aria-label="Фильтры работ">
+        <label>
+          Ученик
+          <select
+            value={studentFilter}
+            onChange={(event) => setStudentFilter(event.target.value)}
+          >
+            <option value="">Все ученики</option>
+            {[...new Set(queue.map((item) => item.studentName))].map((name) => (
+              <option key={name}>{name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Задание
+          <select
+            value={homeworkFilter}
+            onChange={(event) => setHomeworkFilter(event.target.value)}
+          >
+            <option value="">Все задания</option>
+            {[...new Set(queue.map((item) => item.homeworkTitle))].map(
+              (title) => (
+                <option key={title}>{title}</option>
+              ),
+            )}
+          </select>
+        </label>
+        <label>
+          Тема
+          <select
+            value={topicFilter}
+            onChange={(event) => setTopicFilter(event.target.value)}
+          >
+            <option value="">Все темы</option>
+            {[...new Set(queue.map((item) => item.topic))].map((topic) => (
+              <option key={topic}>{topic}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Дата отправки
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(event) => setDateFilter(event.target.value)}
+          />
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={overdueOnly}
+            onChange={(event) => setOverdueOnly(event.target.checked)}
+          />{" "}
+          После срока
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={unreviewedOnly}
+            onChange={(event) => setUnreviewedOnly(event.target.checked)}
+          />{" "}
+          Только непроверенные
+        </label>
+      </section>
       <section className="panel notifications">
         {isLoading && <p role="status">Загрузка работ…</p>}
         {error && (
@@ -2454,7 +2533,7 @@ export function ReviewPage() {
             </button>
           </div>
         )}
-        {queue.map((item) => (
+        {filteredQueue.map((item) => (
           <Link
             key={item.id}
             to={`/teacher/review/${item.id}`}
@@ -2476,8 +2555,8 @@ export function ReviewPage() {
             <ChevronRight />
           </Link>
         ))}
-        {!isLoading && !queue.length && (
-          <p className="empty-inline">Работ на проверку пока нет.</p>
+        {!isLoading && !filteredQueue.length && (
+          <p className="empty-inline">Работ по выбранным фильтрам нет.</p>
         )}
       </section>
     </>
@@ -2487,12 +2566,15 @@ export function ReviewPage() {
 function SubmissionReview({ submissionId }: { submissionId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useSubmissionDetail(submissionId);
+  const { data, isLoading, error, refetch } = useSubmissionDetail(submissionId);
   const [page, setPage] = useState(0);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [returnConfirm, setReturnConfirm] = useState(false);
+  const [viewZoom, setViewZoom] = useState(1);
+  const [viewRotation, setViewRotation] = useState(0);
+  const [fullscreen, setFullscreen] = useState(false);
   if (isLoading)
     return (
       <section className="panel empty" role="status">
@@ -2502,7 +2584,10 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
   if (error || !data)
     return (
       <section className="panel empty form-error" role="alert">
-        Не удалось открыть решение.
+        Не удалось открыть решение.{" "}
+        <button className="button secondary" onClick={() => void refetch()}>
+          Повторить
+        </button>
       </section>
     );
   const image = data.images[page];
@@ -2545,6 +2630,24 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
         eyebrow="ПРОВЕРКА"
         title={`${data.studentName} · ${data.homeworkTitle}`}
       />
+      {data.previousVersions.length > 0 && (
+        <nav
+          className="panel student-filters"
+          aria-label="Предыдущие версии решения"
+        >
+          <strong>Предыдущие версии:</strong>
+          {data.previousVersions.map((version) => (
+            <Link
+              className="button secondary"
+              key={version.id}
+              to={`/teacher/review/${version.id}`}
+            >
+              Версия {version.version} ·{" "}
+              {new Date(version.submittedAt).toLocaleString("ru-RU")}
+            </Link>
+          ))}
+        </nav>
+      )}
       <section className="panel review">
         <div className="review-preview">
           {image ? (
@@ -2552,9 +2655,19 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
               <img
                 src={image.processedUrl}
                 alt={`Страница ${page + 1} из ${data.images.length}`}
+                style={{
+                  transform: `scale(${viewZoom}) rotate(${viewRotation}deg)`,
+                }}
               />
               <div className="image-actions">
-                <button disabled={page === 0} onClick={() => setPage(page - 1)}>
+                <button
+                  disabled={page === 0}
+                  onClick={() => {
+                    setPage(page - 1);
+                    setViewZoom(1);
+                    setViewRotation(0);
+                  }}
+                >
                   Назад
                 </button>
                 <span>
@@ -2562,9 +2675,42 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
                 </span>
                 <button
                   disabled={page === data.images.length - 1}
-                  onClick={() => setPage(page + 1)}
+                  onClick={() => {
+                    setPage(page + 1);
+                    setViewZoom(1);
+                    setViewRotation(0);
+                  }}
                 >
                   Далее
+                </button>
+              </div>
+              <div
+                className="image-actions"
+                aria-label="Управление изображением"
+              >
+                <button
+                  type="button"
+                  aria-label="Уменьшить"
+                  onClick={() => setViewZoom(Math.max(0.5, viewZoom - 0.25))}
+                >
+                  −
+                </button>
+                <span>{Math.round(viewZoom * 100)}%</span>
+                <button
+                  type="button"
+                  aria-label="Увеличить"
+                  onClick={() => setViewZoom(Math.min(3, viewZoom + 0.25))}
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewRotation((viewRotation + 90) % 360)}
+                >
+                  Повернуть
+                </button>
+                <button type="button" onClick={() => setFullscreen(true)}>
+                  На весь экран
                 </button>
               </div>
               <a
@@ -2686,6 +2832,31 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
           )}
         </div>
       </section>
+      {fullscreen && image && (
+        <div
+          className="editor-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Страница ${page + 1} из ${data.images.length}`}
+          onClick={() => setFullscreen(false)}
+        >
+          <button
+            className="editor-close"
+            aria-label="Закрыть просмотр"
+            onClick={() => setFullscreen(false)}
+          >
+            <X />
+          </button>
+          <img
+            className="fullscreen-image"
+            src={image.processedUrl}
+            alt={`Страница ${page + 1}`}
+            style={{
+              transform: `scale(${viewZoom}) rotate(${viewRotation}deg)`,
+            }}
+          />
+        </div>
+      )}
     </>
   );
 }

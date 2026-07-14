@@ -62,5 +62,5 @@ test("calendar loads lessons beyond fourteen days", async ({ page }) => {
   await next.click();
   await next.click();
   await next.click();
-  await expect(page.getByText("Анна Волкова")).toBeVisible();
+  await expect(page.getByText("Анна Волкова", { exact: true })).toBeVisible();
 });

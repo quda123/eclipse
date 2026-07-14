@@ -307,12 +307,7 @@ const demoAssignments: AssignmentCard[] = [
 async function fetchAssignments(): Promise<AssignmentCard[]> {
   if (getDemoRole()) return demoAssignments;
   if (!supabase) throw new Error("Supabase не настроен");
-  const { data, error } = await supabase
-    .from("homework_assignments")
-    .select(
-      "id,deadline_at,status,assignment_deadline_extensions(extended_until),homework_versions(homework_id,title,mode,topics(name))",
-    )
-    .order("deadline_at");
+  const { data, error } = await supabase.rpc("assignment_cards");
   if (error) throw error;
   const labels: Record<string, string> = {
     not_started: "Не начато",
@@ -323,20 +318,16 @@ async function fetchAssignments(): Promise<AssignmentCard[]> {
     overdue: "Просрочено",
     returned: "Возвращено",
   };
-  return (data ?? []).map((row) => {
-    const version = Array.isArray(row.homework_versions)
-      ? row.homework_versions[0]
-      : row.homework_versions;
-    const topics = version?.topics as unknown as
-      { name: string } | { name: string }[] | null;
-    const topicName = Array.isArray(topics) ? topics[0]?.name : topics?.name;
-    const deadlineAt = (row.assignment_deadline_extensions ?? []).reduce(
-      (latest, item) =>
-        new Date(item.extended_until) > new Date(latest)
-          ? item.extended_until
-          : latest,
-      row.deadline_at,
-    );
+  return (data ?? []).map((row: {
+    id: string;
+    homework_id: string;
+    title: string;
+    topic: string;
+    mode: string;
+    status: string;
+    effective_deadline: string;
+  }) => {
+    const deadlineAt = row.effective_deadline;
     const status =
       !["submitted", "reviewed"].includes(row.status) &&
       new Date(deadlineAt) < new Date()
@@ -344,9 +335,9 @@ async function fetchAssignments(): Promise<AssignmentCard[]> {
         : (labels[row.status] ?? row.status);
     return {
       id: row.id,
-      homeworkId: version?.homework_id ?? "",
-      title: version?.title ?? "Задание",
-      topic: topicName ?? "Математика",
+      homeworkId: row.homework_id ?? "",
+      title: row.title ?? "Задание",
+      topic: row.topic ?? "Математика",
       deadline: new Date(deadlineAt).toLocaleString("ru-RU", {
         day: "numeric",
         month: "long",
@@ -356,7 +347,7 @@ async function fetchAssignments(): Promise<AssignmentCard[]> {
       }),
       deadlineAt,
       status,
-      mode: version?.mode ?? "automatic",
+      mode: row.mode ?? "automatic",
     };
   });
 }
@@ -995,8 +986,10 @@ export async function uploadManualSubmission(
   if (!draft) throw new Error("Не удалось начать отправку");
   const uploaded: { bucket: string; path: string }[] = [];
   const records = [];
+  let activeIndex = -1;
   try {
     for (let index = 0; index < images.length; index++) {
+      activeIndex = index;
       onProgress?.(index, "uploading");
       const image = images[index];
       const fileId = crypto.randomUUID();
@@ -1046,6 +1039,7 @@ export async function uploadManualSubmission(
     if (error) throw error;
     return data;
   } catch (error) {
+    if (activeIndex >= 0) onProgress?.(activeIndex, "failed");
     await Promise.allSettled(
       uploaded.map(({ bucket, path }) =>
         client.storage.from(bucket).remove([path]),

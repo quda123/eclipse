@@ -280,6 +280,23 @@ update public.notifications n set href='/student/homework/'||a.id||'/result'
 from public.manual_submissions s join public.homework_assignments a on a.id=s.assignment_id
 where n.href='/student/homework/'||a.id||'/results';
 
+create or replace function public.update_lesson_series(p_lesson uuid,p_scope text,p_starts timestamptz,p_ends timestamptz)
+returns int language plpgsql security definer set search_path=public as $$
+declare source public.lessons;changed int;delta interval;
+begin
+  if p_scope not in ('following','series') or not public.is_active_user() then raise exception 'invalid_request'; end if;
+  select * into source from public.lessons where id=p_lesson and teacher_id=auth.uid() for update;
+  if not found or source.series_id is null then raise exception 'not_recurring'; end if;
+  if p_ends<=p_starts then raise exception 'invalid_time'; end if; delta:=p_starts-source.starts_at;
+  update public.lessons set starts_at=starts_at+delta,ends_at=ends_at+delta+(p_ends-p_starts-(source.ends_at-source.starts_at))
+    where series_id=source.series_id and teacher_id=auth.uid() and status='scheduled'
+      and (p_scope='series' or starts_at>=source.starts_at);
+  get diagnostics changed=row_count;
+  insert into public.notifications(user_id,kind,title,href,dedupe_key) values(source.student_id,'lesson','Расписание серии изменено','/student/calendar','lesson-series:'||source.series_id||':'||p_scope||':'||p_starts) on conflict(user_id,dedupe_key) do nothing;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata) values(source.organization_id,auth.uid(),'lesson_series_updated','lesson_series',source.series_id,jsonb_build_object('scope',p_scope,'count',changed));
+  return changed;
+end $$;
+
 create or replace function public.student_dashboard() returns jsonb
 language sql stable security definer set search_path=public as $$
   with own_assignments as (
@@ -326,6 +343,17 @@ language sql stable security definer set search_path=public as $$
 $$;
 revoke all on function public.teacher_dashboard() from public;
 grant execute on function public.teacher_dashboard() to authenticated;
+
+create or replace function public.assignment_cards()
+returns table(id uuid,homework_id uuid,title text,topic text,mode public.homework_mode,status public.assignment_status,effective_deadline timestamptz)
+language sql stable security definer set search_path=public as $$
+  select a.id,v.homework_id,v.title,coalesce(t.name,'Математика'),v.mode,a.status,public.assignment_deadline(a.id)
+  from public.homework_assignments a join public.homework_versions v on v.id=a.homework_version_id left join public.topics t on t.id=v.topic_id
+  where public.is_active_user() and (a.student_id=auth.uid() or v.teacher_id=auth.uid())
+  order by public.assignment_deadline(a.id)
+$$;
+revoke all on function public.assignment_cards() from public;
+grant execute on function public.assignment_cards() to authenticated;
 
 create or replace function public.teacher_student_summary()
 returns table(id uuid,first_name text,last_name text,username text,class_name text,status public.member_status,subject text,default_zoom_url text,average_result int,overdue_count int,last_activity timestamptz)

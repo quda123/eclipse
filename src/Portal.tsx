@@ -2374,6 +2374,7 @@ export function CalendarPage() {
     [weekly, setWeekly] = useState(false),
     [calendarError, setCalendarError] = useState(""),
     [busy, setBusy] = useState(false);
+  const lessonDialogRef = useAccessibleDialog(creating, () => setCreating(false));
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -2412,10 +2413,12 @@ export function CalendarPage() {
       </Suspense>
       {creating && (
         <div
+          ref={lessonDialogRef}
           className="editor-backdrop"
           role="dialog"
           aria-modal="true"
           aria-labelledby="lesson-title"
+          aria-describedby="lesson-description"
         >
           <form className="create-student" onSubmit={submit}>
             <header>
@@ -2428,6 +2431,9 @@ export function CalendarPage() {
                 <X />
               </button>
             </header>
+            <p id="lesson-description">
+              Выберите ученика, время занятия и параметры повторения.
+            </p>
             <div className="create-fields">
               <label className="full">
                 Ученик
@@ -3011,8 +3017,20 @@ export function PhotoSubmission() {
   const [confirming, setConfirming] = useState(false);
   const [previewing, setPreviewing] = useState<number | null>(null);
   const [progress, setProgress] = useState<Record<number, string>>({});
+  const [preparedFiles, setPreparedFiles] = useState<
+    {
+      original: File;
+      processed: Blob;
+      thumbnail: Blob;
+      width: number;
+      height: number;
+      rotation: number;
+      crop: Record<string, number>;
+    }[] | null
+  >(null);
   const filesRef = useRef(files);
   filesRef.current = files;
+  useEffect(() => setPreparedFiles(null), [files]);
   useEffect(
     () => () =>
       filesRef.current.forEach((item) => URL.revokeObjectURL(item.url)),
@@ -3185,8 +3203,9 @@ export function PhotoSubmission() {
             setUploading(true);
             setUploadError("");
             try {
-              const prepared = await Promise.all(
-                files.map(async (item) => {
+              const prepared =
+                preparedFiles ??
+                (await Promise.all(files.map(async (item) => {
                   const [processed, thumbnail] = await Promise.all([
                     renderImage(item.url, item.rotation, 2200),
                     renderImage(item.url, item.rotation, 480),
@@ -3200,8 +3219,8 @@ export function PhotoSubmission() {
                     rotation: item.rotation,
                     crop: item.cropMetadata,
                   };
-                }),
-              );
+                })));
+              if (!preparedFiles) setPreparedFiles(prepared);
               await uploadManualSubmission(
                 assignmentId,
                 prepared,

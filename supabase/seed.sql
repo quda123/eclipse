@@ -61,7 +61,7 @@ insert into public.homework_questions(id,homework_version_id,position,prompt) va
 insert into public.question_accepted_answers(question_id,value) values('52000000-0000-0000-0000-000000000001','7'),('52000000-0000-0000-0000-000000000002','парабола');
 insert into public.homework_assignments(id,homework_version_id,student_id,deadline_at,timezone,status) values
 ('53000000-0000-0000-0000-000000000001','51000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',now()+interval '3 days','Europe/Moscow','in_progress'),
-('53000000-0000-0000-0000-000000000002','51000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001',now()+interval '5 days','Europe/Moscow','not_started'),
+('53000000-0000-0000-0000-000000000002','51000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001',now()+interval '5 days','Europe/Moscow','returned'),
 ('53000000-0000-0000-0000-000000000003','51000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002',now()-interval '1 day','Europe/Moscow','overdue');
 insert into public.lessons(id,organization_id,teacher_id,student_id,starts_at,ends_at,timezone,zoom_url) values
 ('60000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '16 hours',date_trunc('day',now())+interval '16 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna'),
@@ -84,6 +84,10 @@ insert into public.teacher_student_links(teacher_id,student_id,organization_id) 
 insert into public.manual_tasks(homework_version_id,position,prompt,max_points) values
 ('51000000-0000-0000-0000-000000000002',1,'Докажите теорему Пифагора',2),
 ('51000000-0000-0000-0000-000000000002',2,'Решите задачу на применение теоремы',3);
+insert into public.manual_submissions(id,assignment_id,student_id,version,submitted_at,returned_at) values
+('56000000-0000-0000-0000-000000000002','53000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000001',1,now()-interval '1 day',now()-interval '12 hours');
+insert into public.manual_submission_versions(id,submission_id,version,submitted_at,returned_at) values
+('57000000-0000-0000-0000-000000000002','56000000-0000-0000-0000-000000000002',1,now()-interval '1 day',now()-interval '12 hours');
 insert into public.attempts(id,assignment_id,student_id,attempt_number,answers,score,maximum_score,idempotency_key,started_at,duration_seconds,submitted_at) values
 ('54000000-0000-0000-0000-000000000001','53000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',1,'{"52000000-0000-0000-0000-000000000001":"7","52000000-0000-0000-0000-000000000002":"гипербола"}',1,2,'55000000-0000-0000-0000-000000000001',now()-interval '25 minutes',1500,now()),
 ('54000000-0000-0000-0000-000000000002','53000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',2,'{"52000000-0000-0000-0000-000000000001":"7","52000000-0000-0000-0000-000000000002":"парабола"}',2,2,'55000000-0000-0000-0000-000000000002',now()-interval '15 minutes',900,now());
@@ -117,7 +121,8 @@ insert into public.lesson_series(id,organization_id,teacher_id,student_id,rrule,
 ('61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','FREQ=WEEKLY','Europe/Moscow','https://zoom.us/j/demo-anna');
 insert into public.lessons(id,series_id,organization_id,teacher_id,student_id,starts_at,ends_at,timezone,zoom_url,status,original_occurrence) values
 ('60000000-0000-0000-0000-000000000003','61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '3 days 17 hours',date_trunc('day',now())+interval '3 days 17 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna','moved',date_trunc('day',now())+interval '3 days 16 hours'),
-('60000000-0000-0000-0000-000000000004','61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '24 days 17 hours',date_trunc('day',now())+interval '24 days 17 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna','scheduled',date_trunc('day',now())+interval '24 days 17 hours');
+('60000000-0000-0000-0000-000000000004','61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '24 days 17 hours',date_trunc('day',now())+interval '24 days 17 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna','scheduled',date_trunc('day',now())+interval '24 days 17 hours'),
+('60000000-0000-0000-0000-000000000005','61000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',date_trunc('day',now())+interval '10 days 17 hours',date_trunc('day',now())+interval '10 days 17 hours 50 minutes','Europe/Moscow','https://zoom.us/j/demo-anna','cancelled',date_trunc('day',now())+interval '10 days 17 hours');
 
 do $$ declare item record; begin
   for item in select id from public.homework_assignments loop

@@ -198,7 +198,9 @@ test("teacher publishes combined homework and student reaches the written part",
   ).toBeVisible();
 
   await page.goto(`/student/homework/${assignmentId}`);
-  await expect(page.getByText("Не удалось открыть задание.")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText(
+    "Автоматическая часть уже завершена",
+  );
 
   await login(page, "teacher");
   await page.goto("/teacher/review");

@@ -1061,48 +1061,32 @@ export type ReviewQueueItem = {
   reviewed: boolean;
   overdue: boolean;
 };
+type ReviewQueueRow = {
+  id: string;
+  student_first_name: string;
+  student_last_name: string;
+  homework_title: string;
+  topic: string;
+  submitted_at: string;
+  effective_deadline: string;
+  image_count: number;
+};
 async function fetchReviewQueue(): Promise<ReviewQueueItem[]> {
   if (!supabase) throw new Error("Supabase не настроен");
-  const { data, error } = await supabase
-    .from("manual_submissions")
-    .select(
-      "id,submitted_at,reviewed_at,student:profiles!manual_submissions_student_id_fkey(first_name,last_name),assignment:homework_assignments!manual_submissions_assignment_id_fkey(deadline_at,homework_versions(title,topics(name))),submission_images(count)",
-    )
-    .not("submitted_at", "is", null)
-    .order("submitted_at", { ascending: false })
-    .limit(100);
+  const { data, error } = await supabase.rpc("manual_review_queue");
   if (error) throw error;
-  return (data ?? []).map((row) => {
-    const student = Array.isArray(row.student) ? row.student[0] : row.student;
-    const assignment = Array.isArray(row.assignment)
-      ? row.assignment[0]
-      : row.assignment;
-    const version = assignment
-      ? Array.isArray(assignment.homework_versions)
-        ? assignment.homework_versions[0]
-        : assignment.homework_versions
-      : null;
-    const count = Array.isArray(row.submission_images)
-      ? row.submission_images[0]?.count
-      : 0;
-    const topic = version
-      ? Array.isArray(version.topics)
-        ? version.topics[0]
-        : version.topics
-      : null;
-    const deadlineAt = assignment?.deadline_at ?? row.submitted_at!;
+  return ((data ?? []) as ReviewQueueRow[]).map((row) => {
+    const deadlineAt = row.effective_deadline ?? row.submitted_at!;
     return {
       id: row.id,
-      studentName: student
-        ? `${student.first_name} ${student.last_name}`
-        : "Ученик",
-      homeworkTitle: version?.title ?? "Задание",
-      topic: topic?.name ?? "Без темы",
+      studentName: `${row.student_first_name} ${row.student_last_name}`,
+      homeworkTitle: row.homework_title,
+      topic: row.topic,
       submittedAt: row.submitted_at!,
       deadlineAt,
-      imageCount: Number(count ?? 0),
-      status: row.reviewed_at ? "Проверено" : "Ожидает проверки",
-      reviewed: Boolean(row.reviewed_at),
+      imageCount: Number(row.image_count ?? 0),
+      status: "Ожидает проверки",
+      reviewed: false,
       overdue: new Date(row.submitted_at!) > new Date(deadlineAt),
     };
   });
@@ -1259,5 +1243,12 @@ export async function manageStudent(body: {
   });
   if (error) throw error;
   if (data?.error) throw new Error(data.error);
-  return data;
+  if (!data?.ok && !data?.actionCompleted)
+    throw new Error(data?.warning ?? "Операция не выполнена");
+  return data as {
+    ok: boolean;
+    actionCompleted: boolean;
+    auditRecorded: boolean;
+    warning: string | null;
+  };
 }

@@ -859,14 +859,14 @@ export function StudentDetail() {
               setAccountBusy(true);
               setAccountMessage("");
               try {
-                await manageStudent({
+                const result = await manageStudent({
                   studentId: s.id,
                   action: "update-profile",
                   className,
                   zoomUrl,
                 });
                 await queryClient.invalidateQueries({ queryKey: ["students"] });
-                setAccountMessage("Профиль обновлён.");
+                setAccountMessage(result.warning ?? "Профиль обновлён.");
               } catch {
                 setAccountMessage("Не удалось обновить профиль.");
               } finally {
@@ -889,14 +889,15 @@ export function StudentDetail() {
               const password = `Ecl-${crypto.randomUUID().slice(0, 8)}`;
               setAccountBusy(true);
               try {
-                await manageStudent({
+                const result = await manageStudent({
                   studentId: s.id,
                   action: "reset-password",
                   password,
                 });
                 setTemporaryPassword(password);
                 setAccountMessage(
-                  "Временный пароль создан. Скопируйте его сейчас — повторно он не показывается.",
+                  result.warning ??
+                    "Временный пароль создан. Скопируйте его сейчас — повторно он не показывается.",
                 );
               } catch {
                 setAccountMessage("Не удалось сбросить пароль.");
@@ -913,15 +914,16 @@ export function StudentDetail() {
             onClick={async () => {
               setAccountBusy(true);
               try {
-                await manageStudent({
+                const result = await manageStudent({
                   studentId: s.id,
                   action: s.status === "archived" ? "restore" : "archive",
                 });
                 await queryClient.invalidateQueries({ queryKey: ["students"] });
                 setAccountMessage(
-                  s.status === "archived"
-                    ? "Аккаунт восстановлен."
-                    : "Аккаунт архивирован.",
+                  result.warning ??
+                    (s.status === "archived"
+                      ? "Аккаунт восстановлен."
+                      : "Аккаунт архивирован."),
                 );
               } catch {
                 setAccountMessage("Не удалось изменить статус.");
@@ -1942,7 +1944,10 @@ export function HomeworkBuilder() {
               title,
               mode,
               questions: questions.map(({ prompt }) => ({ prompt })),
-              manualTasks: manualTasks.map((task) => task.prompt),
+              manualTasks: manualTasks.map(({ prompt, maxPoints }) => ({
+                prompt,
+                maxPoints,
+              })),
             }}
           >
             Предпросмотр
@@ -2018,7 +2023,7 @@ export function TestAttempt() {
     title?: string;
     mode?: string;
     questions?: { prompt: string }[];
-    manualTasks?: string[];
+    manualTasks?: { prompt: string; maxPoints: number }[];
   } | null;
   const { data, isLoading, error } = useAssignment(
     assignmentKey,
@@ -2245,8 +2250,10 @@ export function TestAttempt() {
           {preview &&
             previewState?.manualTasks?.map((task, index) => (
               <article className="panel question" key={index}>
-                <span>Письменная задача {index + 1} · 2 балла</span>
-                <h2>{task}</h2>
+                <span>
+                  Письменная задача {index + 1} · максимум {task.maxPoints}
+                </span>
+                <h2>{task.prompt}</h2>
                 <p>Ученик приложит фотографии решения.</p>
               </article>
             ))}

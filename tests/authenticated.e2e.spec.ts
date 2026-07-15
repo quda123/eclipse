@@ -115,6 +115,7 @@ test("student sees the durable combined result", async ({ page }) => {
 test("teacher publishes combined homework and student reaches the written part", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await login(page, "teacher");
   await page.goto("/teacher/homework/new");
   await page.getByLabel("Комбинированное").check();

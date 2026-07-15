@@ -11,7 +11,7 @@ begin
   if not found then raise exception 'forbidden'; end if;
   select * into v from public.homework_versions where id=a.homework_version_id;
   if v.mode='manual' then raise exception 'automatic_part_not_allowed'; end if;
-  if exists(select 1 from public.manual_submissions where assignment_id=a.id and submitted_at is not null) then raise exception 'manual_part_already_submitted'; end if;
+  if exists(select 1 from public.manual_submissions m where m.assignment_id=a.id and m.submitted_at is not null) then raise exception 'manual_part_already_submitted'; end if;
   if a.status='reviewed' then raise exception 'assignment_already_reviewed'; end if;
   if now()>public.assignment_deadline(a.id) then raise exception 'deadline_expired'; end if;
   allowed:=v.attempts_allowed;
@@ -38,7 +38,7 @@ begin
   if not found or a.student_id is distinct from auth.uid() then raise exception 'forbidden'; end if;
   select * into v from public.homework_versions where id=a.homework_version_id;
   if v.mode='manual' then raise exception 'automatic_part_not_allowed'; end if;
-  if exists(select 1 from public.manual_submissions where assignment_id=a.id and submitted_at is not null) then raise exception 'manual_part_already_submitted'; end if;
+  if exists(select 1 from public.manual_submissions m where m.assignment_id=a.id and m.submitted_at is not null) then raise exception 'manual_part_already_submitted'; end if;
   if a.status='reviewed' then raise exception 'assignment_already_reviewed'; end if;
   if now()>public.assignment_deadline(a.id) then raise exception 'deadline_expired'; end if;
   allowed:=v.attempts_allowed;

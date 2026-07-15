@@ -27,7 +27,11 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { isAcceptedAnswer, validateHomework, validateImage } from "./lib/homework";
+import {
+  isAcceptedAnswer,
+  validateHomework,
+  validateImage,
+} from "./lib/homework";
 import { supabase } from "./lib/supabase";
 import { usernameSchema } from "./lib/schemas";
 import {
@@ -212,9 +216,19 @@ function FullscreenImageDialog({
       aria-describedby="image-preview-description"
       onClick={onClose}
     >
-      <h2 id="image-preview-title" className="sr-only">Просмотр изображения</h2>
-      <p id="image-preview-description" className="sr-only">{alt}</p>
-      <button className="editor-close" aria-label="Закрыть просмотр" onClick={onClose}><X /></button>
+      <h2 id="image-preview-title" className="sr-only">
+        Просмотр изображения
+      </h2>
+      <p id="image-preview-description" className="sr-only">
+        {alt}
+      </p>
+      <button
+        className="editor-close"
+        aria-label="Закрыть просмотр"
+        onClick={onClose}
+      >
+        <X />
+      </button>
       <img
         className="fullscreen-image"
         src={src}
@@ -375,9 +389,7 @@ export function TeacherDashboard() {
       />
       <section className="metrics">
         <Metric
-          value={
-            dashboard?.awaitingReviewCount ?? 0
-          }
+          value={dashboard?.awaitingReviewCount ?? 0}
           label="Ожидают проверки"
           tone="warm"
         />
@@ -392,20 +404,19 @@ export function TeacherDashboard() {
           tone="warm"
         />
         <Metric
-          value={
-            dashboard?.deadlineTomorrowCount ?? 0
-          }
+          value={dashboard?.deadlineTomorrowCount ?? 0}
           label="Дедлайн завтра"
         />
         <Metric
           value={dashboard?.lessonsTodayCount ?? 0}
           label="Занятия сегодня"
         />
-        <Metric value={dashboard?.newAutomaticResultsCount ?? unreadResults} label="Новых результатов тестов" />
         <Metric
-          value={
-            dashboard?.newPhotoSubmissionsCount ?? 0
-          }
+          value={dashboard?.newAutomaticResultsCount ?? unreadResults}
+          label="Новых результатов тестов"
+        />
+        <Metric
+          value={dashboard?.newPhotoSubmissionsCount ?? 0}
           label="Недавно загруженные фотографии"
         />
         <Metric
@@ -1044,8 +1055,12 @@ export function StudentDetail() {
                 queryKey: ["student-analytics", studentId],
               }),
               queryClient.invalidateQueries({ queryKey: ["assignments"] }),
-              queryClient.invalidateQueries({ queryKey: ["student-dashboard"] }),
-              queryClient.invalidateQueries({ queryKey: ["teacher-dashboard"] }),
+              queryClient.invalidateQueries({
+                queryKey: ["student-dashboard"],
+              }),
+              queryClient.invalidateQueries({
+                queryKey: ["teacher-dashboard"],
+              }),
             ]);
             setAccountMessage("Индивидуальный срок продлён.");
           } catch {
@@ -1324,7 +1339,10 @@ export function HomeworkBuilder() {
     subjectId,
     topicId,
     questions: questions.map(({ prompt, answers }) => ({ prompt, answers })),
-    manualTasks: manualTasks.map(({ prompt, maxPoints }) => ({ prompt, maxPoints })),
+    manualTasks: manualTasks.map(({ prompt, maxPoints }) => ({
+      prompt,
+      maxPoints,
+    })),
   });
   return (
     <>
@@ -1355,7 +1373,10 @@ export function HomeworkBuilder() {
                 prompt,
                 answers: answers.filter((value) => value.trim()),
               })),
-              manualTasks: manualTasks.map(({ prompt, maxPoints }) => ({ prompt, maxPoints })),
+              manualTasks: manualTasks.map(({ prompt, maxPoints }) => ({
+                prompt,
+                maxPoints,
+              })),
               instructions,
               deadline,
               attempts,
@@ -1413,7 +1434,9 @@ export function HomeworkBuilder() {
                   setManualTasks(
                     value.manualTasks.map((task) => ({
                       id: crypto.randomUUID(),
-                      ...(typeof task === "string" ? { prompt: task, maxPoints: 2 } : task),
+                      ...(typeof task === "string"
+                        ? { prompt: task, maxPoints: 2 }
+                        : task),
                     })),
                   );
                 }}
@@ -1456,7 +1479,9 @@ export function HomeworkBuilder() {
                   setManualTasks(
                     value.manualTasks.map((task) => ({
                       id: crypto.randomUUID(),
-                      ...(typeof task === "string" ? { prompt: task, maxPoints: 2 } : task),
+                      ...(typeof task === "string"
+                        ? { prompt: task, maxPoints: 2 }
+                        : task),
                     })),
                   );
                 }}
@@ -1754,14 +1779,17 @@ export function HomeworkBuilder() {
             <div className="panel-head">
               <h2>Фото-решение</h2>
               <span>
-                Максимум: {manualTasks.reduce((sum, task) => sum + task.maxPoints, 0)}
+                Максимум:{" "}
+                {manualTasks.reduce((sum, task) => sum + task.maxPoints, 0)}
               </span>
             </div>
             <p>Для каждой задачи задайте максимум от 1 до 20 баллов.</p>
             {manualTasks.map((task, index) => (
               <article className="builder-item" key={task.id}>
                 <div className="panel-head">
-                  <h3>Задача {index + 1} · максимум {task.maxPoints}</h3>
+                  <h3>
+                    Задача {index + 1} · максимум {task.maxPoints}
+                  </h3>
                   <div className="image-actions">
                     <button
                       type="button"
@@ -2159,12 +2187,28 @@ export function TestAttempt() {
         Загрузка задания…
       </section>
     );
-  if (error)
+  if (error) {
+    const automaticLocked = String(
+      (error as { message?: string }).message ?? error,
+    ).includes("manual_part_already_submitted");
     return (
       <section className="panel empty form-error" role="alert">
-        Не удалось открыть задание.
+        {automaticLocked ? (
+          <>
+            Автоматическая часть уже завершена. Продолжите письменную часть.
+            <Link
+              className="button"
+              to={`/student/homework/${assignmentKey}/photos`}
+            >
+              Открыть письменную часть
+            </Link>
+          </>
+        ) : (
+          "Не удалось открыть задание."
+        )}
       </section>
     );
+  }
   if (done) {
     const percentage = score.maximum
       ? Math.round((score.score / score.maximum) * 100)
@@ -2281,9 +2325,15 @@ export function TestAttempt() {
                   );
                   if (result) {
                     await Promise.all([
-                      queryClient.invalidateQueries({ queryKey: ["assignments"] }),
-                      queryClient.invalidateQueries({ queryKey: ["student-dashboard"] }),
-                      queryClient.invalidateQueries({ queryKey: ["assignment-result", assignmentKey] }),
+                      queryClient.invalidateQueries({
+                        queryKey: ["assignments"],
+                      }),
+                      queryClient.invalidateQueries({
+                        queryKey: ["student-dashboard"],
+                      }),
+                      queryClient.invalidateQueries({
+                        queryKey: ["assignment-result", assignmentKey],
+                      }),
                     ]);
                     setSubmittedScore({
                       score: result.score,
@@ -2337,16 +2387,32 @@ export function AssignmentResultPage() {
   const teacher = useLocation().pathname.startsWith("/teacher");
   const { data, isLoading, error } = useAssignmentResult(assignmentId);
   if (isLoading)
-    return <section className="panel empty" role="status">Загрузка результата…</section>;
+    return (
+      <section className="panel empty" role="status">
+        Загрузка результата…
+      </section>
+    );
   if (error || !data)
-    return <section className="panel empty form-error" role="alert">Результат не найден или у вас нет доступа.</section>;
-  const manualAction = data.status === "returned" ? "Отправить новую версию" : "Загрузить письменное решение";
+    return (
+      <section className="panel empty form-error" role="alert">
+        Результат не найден или у вас нет доступа.
+      </section>
+    );
+  const manualAction =
+    data.status === "returned"
+      ? "Отправить новую версию"
+      : "Загрузить письменное решение";
   return (
     <>
       <PageTitle eyebrow="ИТОГ ЗАДАНИЯ" title={data.title} />
       <section className="panel result">
         {data.automatic_maximum > 0 && (
-          <p>Автоматическая часть: <strong>{data.automatic_score} из {data.automatic_maximum}</strong></p>
+          <p>
+            Автоматическая часть:{" "}
+            <strong>
+              {data.automatic_score} из {data.automatic_maximum}
+            </strong>
+          </p>
         )}
         {data.status === "manual_pending" && (
           <p>Письменная часть ещё не отправлена</p>
@@ -2362,16 +2428,34 @@ export function AssignmentResultPage() {
         )}
         {data.status === "reviewed" && (
           <>
-            <p>Письменная часть: <strong>{data.manual_score} из {data.manual_maximum}</strong></p>
-            <strong>Итог: {data.total_score} из {data.total_maximum} · {data.percentage}%</strong>
+            <p>
+              Письменная часть:{" "}
+              <strong>
+                {data.manual_score} из {data.manual_maximum}
+              </strong>
+            </p>
+            <strong>
+              Итог: {data.total_score} из {data.total_maximum} ·{" "}
+              {data.percentage}%
+            </strong>
           </>
         )}
-        <p>Использовано попыток: {data.attempts_used} из {data.attempts_allowed}</p>
+        <p>
+          Использовано попыток: {data.attempts_used} из {data.attempts_allowed}
+        </p>
         {!teacher && ["manual_pending", "returned"].includes(data.status) && (
-          <Link className="button" to={`/student/homework/${assignmentId}/photos`}>{manualAction}</Link>
+          <Link
+            className="button"
+            to={`/student/homework/${assignmentId}/photos`}
+          >
+            {manualAction}
+          </Link>
         )}
         {data.best_attempt_id && (
-          <Link className="button secondary" to={`/${teacher ? "teacher" : "student"}/results/${data.best_attempt_id}`}>
+          <Link
+            className="button secondary"
+            to={`/${teacher ? "teacher" : "student"}/results/${data.best_attempt_id}`}
+          >
             Подробный разбор лучшей попытки
           </Link>
         )}
@@ -2392,7 +2476,9 @@ export function CalendarPage() {
     [weekly, setWeekly] = useState(false),
     [calendarError, setCalendarError] = useState(""),
     [busy, setBusy] = useState(false);
-  const lessonDialogRef = useAccessibleDialog(creating, () => setCreating(false));
+  const lessonDialogRef = useAccessibleDialog(creating, () =>
+    setCreating(false),
+  );
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setBusy(true);
@@ -2893,7 +2979,8 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
           {data.tasks.map((task) => (
             <fieldset key={task.id}>
               <legend>
-                {task.position}. {task.prompt} · максимум {task.maxPoints} баллов
+                {task.position}. {task.prompt} · максимум {task.maxPoints}{" "}
+                баллов
               </legend>
               <label>
                 Баллы
@@ -2939,8 +3026,12 @@ function SubmissionReview({ submissionId }: { submissionId: string }) {
                 });
                 await Promise.all([
                   queryClient.invalidateQueries({ queryKey: ["assignments"] }),
-                  queryClient.invalidateQueries({ queryKey: ["teacher-dashboard"] }),
-                  queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+                  queryClient.invalidateQueries({
+                    queryKey: ["teacher-dashboard"],
+                  }),
+                  queryClient.invalidateQueries({
+                    queryKey: ["notifications"],
+                  }),
                 ]);
                 navigate("/teacher/review");
               } catch {
@@ -3058,15 +3149,16 @@ export function PhotoSubmission() {
   const [previewing, setPreviewing] = useState<number | null>(null);
   const [progress, setProgress] = useState<Record<number, string>>({});
   const [preparedFiles, setPreparedFiles] = useState<
-    {
-      original: File;
-      processed: Blob;
-      thumbnail: Blob;
-      width: number;
-      height: number;
-      rotation: number;
-      crop: Record<string, number>;
-    }[] | null
+    | {
+        original: File;
+        processed: Blob;
+        thumbnail: Blob;
+        width: number;
+        height: number;
+        rotation: number;
+        crop: Record<string, number>;
+      }[]
+    | null
   >(null);
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -3177,7 +3269,9 @@ export function PhotoSubmission() {
                         const replacement = e.target.files?.[0];
                         e.target.value = "";
                         if (!replacement || !validateImage(replacement)) {
-                          setUploadError("Файл не поддерживается или превышает 20 МБ.");
+                          setUploadError(
+                            "Файл не поддерживается или превышает 20 МБ.",
+                          );
                           return;
                         }
                         try {
@@ -3245,21 +3339,23 @@ export function PhotoSubmission() {
             try {
               const prepared =
                 preparedFiles ??
-                (await Promise.all(files.map(async (item) => {
-                  const [processed, thumbnail] = await Promise.all([
-                    renderImage(item.url, item.rotation, 2200),
-                    renderImage(item.url, item.rotation, 480),
-                  ]);
-                  return {
-                    original: item.file,
-                    processed: processed.blob,
-                    thumbnail: thumbnail.blob,
-                    width: processed.width,
-                    height: processed.height,
-                    rotation: item.rotation,
-                    crop: item.cropMetadata,
-                  };
-                })));
+                (await Promise.all(
+                  files.map(async (item) => {
+                    const [processed, thumbnail] = await Promise.all([
+                      renderImage(item.url, item.rotation, 2200),
+                      renderImage(item.url, item.rotation, 480),
+                    ]);
+                    return {
+                      original: item.file,
+                      processed: processed.blob,
+                      thumbnail: thumbnail.blob,
+                      width: processed.width,
+                      height: processed.height,
+                      rotation: item.rotation,
+                      crop: item.cropMetadata,
+                    };
+                  }),
+                ));
               if (!preparedFiles) setPreparedFiles(prepared);
               await uploadManualSubmission(
                 assignmentId,
@@ -3277,8 +3373,12 @@ export function PhotoSubmission() {
               );
               await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["assignments"] }),
-                queryClient.invalidateQueries({ queryKey: ["student-dashboard"] }),
-                queryClient.invalidateQueries({ queryKey: ["assignment-result", assignmentId] }),
+                queryClient.invalidateQueries({
+                  queryKey: ["student-dashboard"],
+                }),
+                queryClient.invalidateQueries({
+                  queryKey: ["assignment-result", assignmentId],
+                }),
               ]);
               setSent(true);
             } catch {

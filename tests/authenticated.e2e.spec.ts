@@ -42,14 +42,18 @@ test("teacher creates a student who changes the temporary password", async ({
   await page.getByLabel("Имя").fill("Елена");
   await page.getByLabel("Фамилия").fill("Тестова");
   await page.getByLabel("Логин").fill("e2e.student");
-  const temporaryPassword = await page.getByLabel("Временный пароль").inputValue();
+  const temporaryPassword = await page
+    .getByLabel("Временный пароль")
+    .inputValue();
   const creationResponse = page.waitForResponse((response) =>
     response.url().includes("/functions/v1/create-student"),
   );
   await page.getByRole("button", { name: "Создать аккаунт" }).click();
   const response = await creationResponse;
   if (!response.ok()) {
-    throw new Error(`create-student ${response.status()}: ${await response.text()}`);
+    throw new Error(
+      `create-student ${response.status()}: ${await response.text()}`,
+    );
   }
   await expect(page.getByText("Елена Тестова")).toBeVisible();
 
@@ -66,7 +70,9 @@ test("teacher creates a student who changes the temporary password", async ({
   await page.getByLabel("Логин").fill("e2e.student");
   await page.getByLabel("Пароль").fill(temporaryPassword);
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await expect(page.getByRole("alert")).toContainText("Неверный логин или пароль");
+  await expect(page.getByRole("alert")).toContainText(
+    "Неверный логин или пароль",
+  );
   await loginWithPassword(page, "e2e.student", nextPassword);
   await expect(page).toHaveURL(/\/student$/);
 });
@@ -117,14 +123,26 @@ test("teacher publishes combined homework and student reaches the written part",
   deadline.setMinutes(deadline.getMinutes() - deadline.getTimezoneOffset());
   await page.getByLabel("Срок").fill(deadline.toISOString().slice(0, 16));
   await page.getByLabel("Условие").nth(0).fill("Сколько будет 1 + 1?");
-  await page.getByRole("group", { name: "Принимаемые ответы" }).getByRole("textbox").fill("2");
-  await page.getByLabel("Условие").nth(1).fill("Покажите решение первой задачи");
+  await page
+    .getByRole("group", { name: "Принимаемые ответы" })
+    .getByRole("textbox")
+    .fill("2");
+  await page
+    .getByLabel("Условие")
+    .nth(1)
+    .fill("Покажите решение первой задачи");
   await page.getByLabel("Максимальный балл").nth(0).fill("2");
   await page.getByRole("button", { name: "Добавить задачу" }).click();
-  await page.getByLabel("Условие").nth(2).fill("Покажите решение второй задачи");
+  await page
+    .getByLabel("Условие")
+    .nth(2)
+    .fill("Покажите решение второй задачи");
   await page.getByLabel("Максимальный балл").nth(1).fill("3");
   await page.getByRole("button", { name: "Добавить задачу" }).click();
-  await page.getByLabel("Условие").nth(3).fill("Покажите решение третьей задачи");
+  await page
+    .getByLabel("Условие")
+    .nth(3)
+    .fill("Покажите решение третьей задачи");
   await page.getByLabel("Максимальный балл").nth(2).fill("4");
   await page.getByLabel("Анна Волкова").check();
   await page.getByRole("button", { name: "Опубликовать" }).click();
@@ -151,25 +169,60 @@ test("teacher publishes combined homework and student reaches the written part",
   await page.getByLabel("Ваш ответ").fill("2");
   await page.getByRole("button", { name: "Завершить попытку" }).click();
   await page.getByRole("button", { name: /Подтвердить отправку/ }).click();
-  await expect(page.getByText("Письменная часть ещё не отправлена")).toBeVisible();
+  await expect(
+    page.getByText("Письменная часть ещё не отправлена"),
+  ).toBeVisible();
   const resultUrl = page.url();
-  await page.getByRole("link", { name: "Загрузить письменное решение" }).click();
-  await page.locator('input[type="file"]').first().setInputFiles([
-    { name: "page-1.png", mimeType: "image/png", buffer: png },
-    { name: "page-2.png", mimeType: "image/png", buffer: png },
-    { name: "page-3.png", mimeType: "image/png", buffer: png },
-  ]);
+  await page
+    .getByRole("link", { name: "Загрузить письменное решение" })
+    .click();
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles([
+      { name: "page-1.png", mimeType: "image/png", buffer: png },
+      { name: "page-2.png", mimeType: "image/png", buffer: png },
+      { name: "page-3.png", mimeType: "image/png", buffer: png },
+    ]);
   await expect(page.getByText("Страница 3", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Повернуть страницу" }).nth(1).click();
   await page.getByRole("button", { name: "Поднять страницу" }).nth(2).click();
   await page.getByRole("button", { name: "Обрезать страницу" }).first().click();
   await page.getByRole("button", { name: "Сохранить страницу" }).click();
   await page.getByRole("button", { name: "Отправить решение" }).click();
-  await page.getByRole("button", { name: /Подтвердить отправку 3 стр/ }).click();
-  await expect(page.getByRole("heading", { name: "Решение отправлено." })).toBeVisible();
+  await page
+    .getByRole("button", { name: /Подтвердить отправку 3 стр/ })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Решение отправлено." }),
+  ).toBeVisible();
 
   await page.goto(`/student/homework/${assignmentId}`);
   await expect(page.getByText("Не удалось открыть задание.")).toBeVisible();
+
+  await login(page, "teacher");
+  await page.goto("/teacher/review");
+  await page.getByRole("link", { name: /E2E комбинированная работа/ }).click();
+  await page.getByRole("button", { name: "Вернуть на пересдачу" }).click();
+  await page.getByRole("button", { name: "Подтвердить возврат" }).click();
+  await expect(page).toHaveURL(/\/teacher\/review$/);
+
+  await login(page, "anna");
+  await page.goto(`/student/homework/${assignmentId}`);
+  await expect(page.getByRole("alert")).toContainText(
+    "Автоматическая часть уже завершена",
+  );
+  await page.getByRole("link", { name: "Открыть письменную часть" }).click();
+  await page.locator('input[type="file"]').first().setInputFiles({
+    name: "returned-page.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await page.getByRole("button", { name: "Отправить решение" }).click();
+  await page.getByRole("button", { name: /Подтвердить отправку/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Решение отправлено." }),
+  ).toBeVisible();
 
   await login(page, "teacher");
   await page.goto("/teacher/review");
@@ -194,13 +247,21 @@ test("written preview keeps variable maximum points", async ({ page }) => {
   await page.getByLabel("Условие").fill("Докажите утверждение");
   await page.getByLabel("Максимальный балл").fill("7");
   await page.getByRole("link", { name: "Предпросмотр" }).click();
-  await expect(page.getByText("Письменная задача 1 · максимум 7")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Докажите утверждение" })).toBeVisible();
+  await expect(
+    page.getByText("Письменная задача 1 · максимум 7"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Докажите утверждение" }),
+  ).toBeVisible();
 });
 
-test("student can submit a new version after teacher return", async ({ page }) => {
+test("student can submit a new version after teacher return", async ({
+  page,
+}) => {
   await login(page, "anna");
-  await page.goto("/student/homework/53000000-0000-0000-0000-000000000002/photos");
+  await page.goto(
+    "/student/homework/53000000-0000-0000-0000-000000000002/photos",
+  );
   await page.locator('input[type="file"]').first().setInputFiles({
     name: "resubmission.png",
     mimeType: "image/png",
@@ -208,7 +269,9 @@ test("student can submit a new version after teacher return", async ({ page }) =
   });
   await page.getByRole("button", { name: "Отправить решение" }).click();
   await page.getByRole("button", { name: /Подтвердить отправку/ }).click();
-  await expect(page.getByRole("heading", { name: "Решение отправлено." })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Решение отправлено." }),
+  ).toBeVisible();
 
   await login(page, "teacher");
   await page.goto("/teacher/review");
@@ -218,8 +281,12 @@ test("student can submit a new version after teacher return", async ({ page }) =
   await expect(page).toHaveURL(/\/teacher\/review$/);
 
   await login(page, "anna");
-  await page.goto("/student/homework/53000000-0000-0000-0000-000000000002/photos");
-  await expect(page.getByRole("heading", { name: "Покажите ход мысли." })).toBeVisible();
+  await page.goto(
+    "/student/homework/53000000-0000-0000-0000-000000000002/photos",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Покажите ход мысли." }),
+  ).toBeVisible();
 });
 
 test("calendar loads lessons beyond fourteen days", async ({ page }) => {

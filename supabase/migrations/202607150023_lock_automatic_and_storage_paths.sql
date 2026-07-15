@@ -13,6 +13,7 @@ begin
   if v.mode='manual' then raise exception 'automatic_part_not_allowed'; end if;
   if exists(select 1 from public.manual_submissions m where m.assignment_id=a.id and m.submitted_at is not null) then raise exception 'manual_part_already_submitted'; end if;
   if a.status='reviewed' then raise exception 'assignment_already_reviewed'; end if;
+  if a.status='awaiting_review' then raise exception 'manual_part_already_submitted'; end if;
   if now()>public.assignment_deadline(a.id) then raise exception 'deadline_expired'; end if;
   allowed:=v.attempts_allowed;
   select count(*) into used from public.attempts where attempts.assignment_id=a.id;
@@ -40,6 +41,7 @@ begin
   if v.mode='manual' then raise exception 'automatic_part_not_allowed'; end if;
   if exists(select 1 from public.manual_submissions m where m.assignment_id=a.id and m.submitted_at is not null) then raise exception 'manual_part_already_submitted'; end if;
   if a.status='reviewed' then raise exception 'assignment_already_reviewed'; end if;
+  if a.status='awaiting_review' then raise exception 'manual_part_already_submitted'; end if;
   if now()>public.assignment_deadline(a.id) then raise exception 'deadline_expired'; end if;
   allowed:=v.attempts_allowed;
   select count(*) into maximum from public.homework_questions where homework_version_id=v.id;

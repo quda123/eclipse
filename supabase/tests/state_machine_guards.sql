@@ -27,6 +27,8 @@ insert into public.manual_submissions(id,assignment_id,student_id,version,submit
 ('5e000000-0000-0000-0000-000000000032','5b000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001',2,now(),null);
 insert into public.assignment_deadline_extensions(assignment_id,extended_until,reason,created_by)
 values('5b000000-0000-0000-0000-000000000003',now()+interval '1 day','State machine test','10000000-0000-0000-0000-000000000001');
+insert into public.organization_members(organization_id,user_id,role)
+values('30000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','teacher');
 
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"20000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
@@ -40,12 +42,15 @@ select throws_ok($$select * from public.submit_attempt('5b000000-0000-0000-0000-
 select set_config('request.jwt.claims','{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
 select throws_ok($$select * from public.grade_manual_submission('56000000-0000-0000-0000-000000000002','{}')$$,'P0001','not_reviewable','returned submission cannot be graded');
 select throws_ok($$select * from public.grade_manual_submission('56000000-0000-0000-0000-000000000001','{}')$$,'P0001','not_reviewable','reviewed submission cannot be graded again');
+
+reset role;
 select is((public.recalculate_assignment_result('5b000000-0000-0000-0000-000000000003')).result_status::text,'awaiting_review','latest pending v2 overrides reviewed v1');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
 select is((select count(*)::int from public.manual_review_queue() where id in ('56000000-0000-0000-0000-000000000001','56000000-0000-0000-0000-000000000002')),0,'queue excludes returned and reviewed submissions');
 select is((select count(*)::int from public.manual_review_queue() where id='5e000000-0000-0000-0000-000000000032'),1,'queue contains only latest pending submission');
 select ok((select submitted_at<=effective_deadline from public.manual_review_queue() where id='5e000000-0000-0000-0000-000000000032'),'queue uses extended effective deadline');
 
-insert into public.organization_members(organization_id,user_id,role) values('30000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','teacher');
 select is(public.active_organization(),'30000000-0000-0000-0000-000000000001'::uuid,'multiple memberships keep explicit active organization');
 
 reset role;

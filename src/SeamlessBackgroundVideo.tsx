@@ -79,8 +79,6 @@ export function SeamlessBackgroundVideo({
         video!.removeEventListener("ended", crossfade);
         video!.removeEventListener("ended", onReducedEnded);
         video!.pause();
-        video!.removeAttribute("src");
-        video!.load();
       });
     };
   }, [crossfadeDuration, src]);

@@ -1,30 +1,36 @@
-import {
-  ArrowRight,
-  ChevronRight,
-  LockKeyhole,
-} from "lucide-react";
+import { ArrowRight, ChevronRight, LockKeyhole } from "lucide-react";
 import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { gsap } from "gsap";
 import { currentRole, signInWithUsername } from "./lib/auth";
+import { getDemoRole, setDemoRole } from "./lib/demo";
 import { supabase } from "./lib/supabase";
 import { SeamlessBackgroundVideo } from "./SeamlessBackgroundVideo";
 import { ProductShowcases } from "./ProductShowcases";
+import { useCurrentProfile, useStudentDashboard } from "./lib/data";
 import "./App.css";
-import {
-  CalendarPage,
-  HomeworkBuilder,
-  HomeworkList,
-  NotificationsPage,
-  PhotoSubmission,
-  PortalLayout,
-  ReviewPage,
-  SimplePage,
-  StudentDetail,
-  StudentsPage,
-  TeacherDashboard,
-  TestAttempt,
-} from "./Portal";
+const portalComponent = <K extends keyof typeof import("./Portal")>(name: K) =>
+  lazy(() => import("./Portal").then((module) => ({ default: module[name] })));
+const CalendarPage = portalComponent("CalendarPage");
+const HomeworkBuilder = portalComponent("HomeworkBuilder");
+const HomeworkList = portalComponent("HomeworkList");
+const NotificationsPage = portalComponent("NotificationsPage");
+const PhotoSubmission = portalComponent("PhotoSubmission");
+const PortalLayout = portalComponent("PortalLayout");
+const ReviewPage = portalComponent("ReviewPage");
+const SimplePage = portalComponent("SimplePage");
+const StudentDetail = portalComponent("StudentDetail");
+const StudentsPage = portalComponent("StudentsPage");
+const TeacherDashboard = portalComponent("TeacherDashboard");
+const TestAttempt = portalComponent("TestAttempt");
+const AssignmentResultPage = portalComponent("AssignmentResultPage");
 
 const video =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31.mp4";
@@ -32,11 +38,15 @@ const video =
 function Landing() {
   const root = useRef<HTMLElement>(null);
   const scrollToSection = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    const target=document.querySelector(event.currentTarget.hash);
-    if(!target)return;
+    const target = document.querySelector(event.currentTarget.hash);
+    if (!target) return;
     event.preventDefault();
-    target.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
-    history.replaceState(null,"",event.currentTarget.hash);
+    target.scrollIntoView({
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+    });
+    history.replaceState(null, "", event.currentTarget.hash);
   };
   useEffect(() => {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches || !root.current)
@@ -61,15 +71,25 @@ function Landing() {
   }, []);
   return (
     <main className="landing" id="top" ref={root}>
-      <SeamlessBackgroundVideo src={video} crossfadeDuration={1.2} className="hero-video" />
+      <SeamlessBackgroundVideo
+        src={video}
+        crossfadeDuration={1.2}
+        className="hero-video"
+      />
       <nav className="nav">
         <Link className="logo" to="/">
           Eclipse<sup>®</sup>
         </Link>
         <div className="nav-links">
-          <a href="#top" onClick={scrollToSection}>Главная</a>
-          <a href="#features" onClick={scrollToSection}>Возможности</a>
-          <a href="#about" onClick={scrollToSection}>О платформе</a>
+          <a href="#top" onClick={scrollToSection}>
+            Главная
+          </a>
+          <a href="#features" onClick={scrollToSection}>
+            Возможности
+          </a>
+          <a href="#about" onClick={scrollToSection}>
+            О платформе
+          </a>
           <Link className="login-link" to="/login">
             Войти <ArrowRight size={15} />
           </Link>
@@ -175,26 +195,28 @@ function Login() {
         <button className="cta" type="submit" disabled={busy}>
           {busy ? "Входим…" : "Продолжить"} <ArrowRight size={18} />
         </button>
-        {import.meta.env.DEV && <div className="demo-logins">
-          <button
-            type="button"
-            onClick={() => {
-              localStorage.setItem("eclipse-demo-role", "teacher");
-              navigate("/teacher");
-            }}
-          >
-            Демо преподавателя
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              localStorage.setItem("eclipse-demo-role", "student");
-              navigate("/student");
-            }}
-          >
-            Демо ученика
-          </button>
-        </div>}
+        {import.meta.env.DEV && (
+          <div className="demo-logins">
+            <button
+              type="button"
+              onClick={() => {
+                setDemoRole("teacher");
+                navigate("/teacher");
+              }}
+            >
+              Демо преподавателя
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDemoRole("student");
+                navigate("/student");
+              }}
+            >
+              Демо ученика
+            </button>
+          </div>
+        )}
       </form>
     </main>
   );
@@ -208,24 +230,69 @@ function RoleGuard({
   children: ReactNode;
 }) {
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [message, setMessage] = useState("");
   useEffect(() => {
-    const demo = localStorage.getItem("eclipse-demo-role");
+    if (!supabase) return;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setMessage("");
+        setAllowed(false);
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+  useEffect(() => {
+    const protectRestoredPage = () => {
+      if (sessionStorage.getItem("eclipse:signed-out")) setAllowed(false);
+    };
+    window.addEventListener("pageshow", protectRestoredPage);
+    return () => window.removeEventListener("pageshow", protectRestoredPage);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const demo = getDemoRole();
     if (demo) {
       setAllowed(demo === role);
       return;
     }
-    currentRole().then((value) =>
-      setAllowed(
-        role === "teacher"
-          ? value === "teacher" || value === "owner"
-          : value === "student",
-      ),
-    );
+    currentRole()
+      .then((value) => {
+        if (!active) return;
+        if (value === "archived") setMessage("Аккаунт архивирован");
+        if (value === "password_change") setMessage("password_change");
+        setAllowed(
+          role === "teacher"
+            ? value === "teacher" || value === "owner"
+            : value === "student",
+        );
+      })
+      .catch(() => {
+        if (active) {
+          setMessage("Не удалось проверить доступ. Проверьте соединение.");
+          setAllowed(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [role]);
   if (allowed === null)
     return (
       <main className="login-page">
         <span>Загрузка…</span>
+      </main>
+    );
+  if (!allowed && message === "password_change")
+    return <Navigate to="/change-password" replace />;
+  if (!allowed && message)
+    return (
+      <main className="login-page">
+        <p className="form-error" role="alert">
+          {message}
+        </p>
+        <Link className="cta" to="/login">
+          Вернуться ко входу
+        </Link>
       </main>
     );
   return allowed ? children : <Navigate to="/login" replace />;
@@ -234,41 +301,77 @@ function RoleGuard({
 function ChangePassword() {
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [success, setSuccess] = useState(false);
   return (
     <main className="login-page">
       <form
         className="login-card liquid-glass"
         onSubmit={async (event) => {
           event.preventDefault();
+          setError("");
           if (password.length < 8) {
             setError("Минимум 8 символов");
             return;
           }
-          if (supabase) {
+          if (password !== confirmation) {
+            setError("Пароли не совпадают");
+            return;
+          }
+          if (!supabase) {
+            setError("Supabase не настроен");
+            return;
+          }
+          setBusy(true);
+          try {
             const { error: authError } = await supabase.auth.updateUser({
               password,
             });
             if (authError) {
               setError("Не удалось изменить пароль");
-              return;
+              throw new Error("Не удалось изменить пароль");
             }
             const {
               data: { user },
             } = await supabase.auth.getUser();
-            if (user)
-              await supabase
-                .from("profiles")
-                .update({ must_change_password: false })
-                .eq("id", user.id);
+            if (!user) throw new Error("Сессия завершена. Войдите снова.");
+            const { error: profileError } = await supabase
+              .from("profiles")
+              .update({ must_change_password: false })
+              .eq("id", user.id);
+            if (profileError)
+              throw new Error(
+                "Пароль изменён, но профиль не обновлён. Обратитесь к преподавателю.",
+              );
+            const role = await currentRole();
+            setSuccess(true);
+            setTimeout(
+              () =>
+                navigate(role === "student" ? "/student" : "/teacher", {
+                  replace: true,
+                }),
+              500,
+            );
+          } catch (value) {
+            setError(
+              value instanceof Error
+                ? value.message
+                : "Не удалось изменить пароль",
+            );
+          } finally {
+            setBusy(false);
           }
-          navigate("/student");
         }}
       >
         <LockKeyhole />
         <p className="eyebrow">БЕЗОПАСНОСТЬ</p>
         <h1>Новый пароль.</h1>
         <p>Временный пароль больше использоваться не будет.</p>
+        <p className="password-help">
+          Не менее 8 символов. Используйте буквы, цифры и специальный знак.
+        </p>
         <label>
           Новый пароль
           <input
@@ -279,22 +382,65 @@ function ChangePassword() {
             required
           />
         </label>
+        <label>
+          Повторите пароль
+          <input
+            type="password"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="new-password"
+            required
+          />
+        </label>
         {error && (
           <p className="form-error" role="alert">
             {error}
           </p>
         )}
-        <button className="cta">Сохранить пароль</button>
+        {success && <p role="status">Пароль сохранён. Перенаправляем…</p>}
+        <button className="cta" disabled={busy || success}>
+          {busy ? "Сохраняем…" : "Сохранить пароль"}
+        </button>
       </form>
     </main>
   );
 }
 
 function StudentDashboard() {
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    error: profileError,
+  } = useCurrentProfile();
+  const { data, isLoading, error } = useStudentDashboard();
+  if (profileLoading || isLoading)
+    return (
+      <section className="panel empty" role="status">
+        Загрузка кабинета…
+      </section>
+    );
+  if (profileError || error || !profile || !data)
+    return (
+      <section className="panel empty form-error" role="alert">
+        Не удалось загрузить кабинет. Проверьте соединение и повторите попытку.
+      </section>
+    );
+  const lesson = data.nextLesson;
+  const assignment = data.nextAssignment;
+  const lessonStart = lesson ? new Date(lesson.startsAt) : null;
+  const duration = lesson
+    ? Math.round(
+        (new Date(lesson.endsAt).getTime() -
+          new Date(lesson.startsAt).getTime()) /
+          60000,
+      )
+    : 0;
   return (
     <>
       <header className="student-welcome">
-        <p className="eyebrow">ДОБРЫЙ ДЕНЬ, ИВАН</p>
+        <p className="eyebrow">
+          ДОБРЫЙ ДЕНЬ, {profile.firstName.toLocaleUpperCase("ru-RU")}
+        </p>
         <h1>
           Сегодня можно
           <br />
@@ -304,31 +450,77 @@ function StudentDashboard() {
       <section className="dashboard-grid">
         <article className="next-lesson">
           <p className="eyebrow">БЛИЖАЙШЕЕ ЗАНЯТИЕ</p>
-          <h2>Линейные уравнения</h2>
-          <p>Сегодня, 18:00 · 50 минут</p>
-          <a
-            className="cta"
-            href="https://zoom.us"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Подключиться к Zoom <ArrowRight size={18} />
-          </a>
+          {lesson && lessonStart ? (
+            <>
+              <h2>
+                {lesson.status === "moved"
+                  ? "Занятие перенесено"
+                  : "Математика"}
+              </h2>
+              <p>
+                {lessonStart.toLocaleString("ru-RU", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}{" "}
+                · {duration} минут
+              </p>
+              {lesson.zoomUrl && /^https:\/\//i.test(lesson.zoomUrl) && (
+                <a
+                  className="cta"
+                  href={lesson.zoomUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Подключиться к Zoom <ArrowRight size={18} />
+                </a>
+              )}
+            </>
+          ) : (
+            <>
+              <h2>Ближайших занятий нет</h2>
+              <p>
+                Новое занятие появится здесь после назначения преподавателем.
+              </p>
+            </>
+          )}
         </article>
         <article>
           <p className="eyebrow">ДОМАШНЕЕ ЗАДАНИЕ</p>
-          <h2>Функции и графики</h2>
-          <p>Сдать до 15 июля, 23:59</p>
-          <Link to="/student/homework/functions" className="text-link">
-            Открыть задание <ArrowRight size={16} />
-          </Link>
+          {assignment ? (
+            <>
+              <h2>{assignment.title}</h2>
+              <p>Сдать до {assignment.deadline}</p>
+              <Link
+                to={
+                  assignment.mode === "manual"
+                    ? `/student/homework/${assignment.id}/photos`
+                    : `/student/homework/${assignment.id}`
+                }
+                className="text-link"
+              >
+                Открыть задание <ArrowRight size={16} />
+              </Link>
+            </>
+          ) : (
+            <>
+              <h2>Активных заданий нет</h2>
+              <p>Можно спокойно повторить пройденный материал.</p>
+            </>
+          )}
         </article>
         <article>
           <p className="eyebrow">ВАШ ПРОГРЕСС</p>
           <strong>
-            84<small>%</small>
+            {data.average}
+            <small>%</small>
           </strong>
-          <p>Средний результат за месяц</p>
+          <p>
+            Средний результат · выполнено {data.completionRate}% · просрочено{" "}
+            {data.overdueCount}
+          </p>
         </article>
       </section>
     </>
@@ -337,51 +529,63 @@ function StudentDashboard() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/teacher"
-        element={
-          <RoleGuard role="teacher">
-            <PortalLayout role="teacher" />
-          </RoleGuard>
-        }
-      >
-        <Route index element={<TeacherDashboard />} />
-        <Route path="students" element={<StudentsPage />} />
-        <Route path="students/:studentId" element={<StudentDetail />} />
-        <Route path="homework" element={<HomeworkList />} />
-        <Route path="homework/new" element={<HomeworkBuilder />} />
-        <Route path="homework/:id/edit" element={<HomeworkBuilder />} />
-        <Route path="homework/:id/preview" element={<TestAttempt />} />
-        <Route path="review" element={<ReviewPage />} />
-        <Route path="calendar" element={<CalendarPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="settings" element={<SimplePage title="Настройки" />} />
-      </Route>
-      <Route
-        path="/student"
-        element={
-          <RoleGuard role="student">
-            <PortalLayout role="student" />
-          </RoleGuard>
-        }
-      >
-        <Route index element={<StudentDashboard />} />
-        <Route path="homework" element={<HomeworkList student />} />
-        <Route path="homework/:assignmentId" element={<TestAttempt />} />
-        <Route path="results/:attemptId" element={<TestAttempt />} />
+    <Suspense
+      fallback={
+        <main className="route-state" role="status">
+          Загрузка…
+        </main>
+      }
+    >
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
         <Route
-          path="homework/:assignmentId/photos"
-          element={<PhotoSubmission />}
-        />
-        <Route path="calendar" element={<CalendarPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="profile" element={<SimplePage title="Ваш профиль" />} />
-      </Route>
-      <Route path="/change-password" element={<ChangePassword />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+          path="/teacher"
+          element={
+            <RoleGuard role="teacher">
+              <PortalLayout role="teacher" />
+            </RoleGuard>
+          }
+        >
+          <Route index element={<TeacherDashboard />} />
+          <Route path="students" element={<StudentsPage />} />
+          <Route path="students/:studentId" element={<StudentDetail />} />
+          <Route path="homework" element={<HomeworkList />} />
+          <Route path="homework/new" element={<HomeworkBuilder />} />
+          <Route path="homework/:id/edit" element={<HomeworkBuilder />} />
+          <Route path="homework/:id/preview" element={<TestAttempt />} />
+          <Route path="review" element={<ReviewPage />} />
+          <Route path="review/:submissionId" element={<ReviewPage />} />
+          <Route path="results/:attemptId" element={<TestAttempt />} />
+          <Route path="homework/:assignmentId/result" element={<AssignmentResultPage />} />
+          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="settings" element={<SimplePage title="Настройки" />} />
+        </Route>
+        <Route
+          path="/student"
+          element={
+            <RoleGuard role="student">
+              <PortalLayout role="student" />
+            </RoleGuard>
+          }
+        >
+          <Route index element={<StudentDashboard />} />
+          <Route path="homework" element={<HomeworkList student />} />
+          <Route path="homework/:assignmentId" element={<TestAttempt />} />
+          <Route path="results/:attemptId" element={<TestAttempt />} />
+          <Route path="homework/:assignmentId/result" element={<AssignmentResultPage />} />
+          <Route
+            path="homework/:assignmentId/photos"
+            element={<PhotoSubmission />}
+          />
+          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="profile" element={<SimplePage title="Ваш профиль" />} />
+        </Route>
+        <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

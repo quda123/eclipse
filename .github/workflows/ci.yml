@@ -1,0 +1,75 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: pnpm install --frozen-lockfile
+      - run: supabase start
+      - run: supabase db reset
+      - run: supabase test db
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Real Supabase browser flows
+        shell: bash
+        run: |
+          eval "$(supabase status -o env | grep -E '^(API_URL|ANON_KEY)=')"
+          # The functions validate the bearer token with auth.getUser themselves.
+          # Avoid the local gateway's legacy JWT verifier rejecting current local keys first.
+          ALLOWED_ORIGIN=http://127.0.0.1:5173 supabase functions serve --no-verify-jwt > /tmp/eclipse-functions.log 2>&1 &
+          FUNCTIONS_PID=$!
+          trap 'kill "$FUNCTIONS_PID" 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --silent --output /dev/null "$API_URL/functions/v1/create-student"; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              cat /tmp/eclipse-functions.log
+              exit 1
+            fi
+            sleep 1
+          done
+          AUTH_STATUS=$(curl --silent --show-error \
+            --output /tmp/eclipse-auth-response.json \
+            --write-out '%{http_code}' \
+            "$API_URL/auth/v1/token?grant_type=password" \
+            -H "apikey: $ANON_KEY" \
+            -H "Content-Type: application/json" \
+            --data '{"email":"teacher@users.eclipse.local","password":"Eclipse-demo-2026"}')
+          if [ "$AUTH_STATUS" != "200" ]; then
+            cat /tmp/eclipse-auth-response.json
+            docker logs supabase_auth_eclipse --tail 100
+            exit 1
+          fi
+          if ! ECLIPSE_BACKEND_E2E=1 VITE_SUPABASE_URL="$API_URL" VITE_SUPABASE_ANON_KEY="$ANON_KEY" pnpm exec playwright test tests/authenticated.e2e.spec.ts --project=desktop --workers=1; then
+            cat /tmp/eclipse-functions.log
+            exit 1
+          fi

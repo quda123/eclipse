@@ -14,7 +14,7 @@ Copy-Item .env.example .env.local
 pnpm dev
 ```
 
-Без Supabase доступны кнопки «Демо преподавателя» и «Демо ученика». Демо хранит ответы и заметки только в `localStorage`; production-аутентификация использует только Supabase.
+В development доступны кнопки «Демо преподавателя» и «Демо ученика». Они удаляются из production-сборки; production-аутентификация использует только Supabase.
 
 ## Локальный Supabase
 
@@ -23,6 +23,7 @@ pnpm dev
 ```powershell
 pnpm supabase:start
 pnpm supabase:reset
+pnpm exec supabase test db
 ```
 
 Скопируйте URL и anon key из вывода `supabase status` в `.env.local`:
@@ -55,7 +56,7 @@ VITE_SUPABASE_ANON_KEY=...
 Edge Functions:
 
 - `create-student` — создание Auth-пользователя с временным паролем;
-- `manage-student` — сброс пароля, архивирование и восстановление аккаунта.
+- `manage-student` — сброс пароля, архивирование, восстановление и обновление профиля ученика.
 
 Service-role key используется только внутри Edge Functions и не входит в клиентский bundle.
 
@@ -69,7 +70,9 @@ pnpm dev
 pnpm test:e2e
 ```
 
-Playwright проверяет desktop и mobile: лендинг → вход → кабинет, role guard, восстановление ответов после reload, завершение теста и отсутствие горизонтального переполнения.
+Playwright проверяет desktop и mobile: лендинг → вход → кабинет, role guard, восстановление ответов после reload, завершение теста и отсутствие горизонтального переполнения. В CI после запуска локального Supabase дополнительно выполняется `authenticated.e2e.spec.ts`: настоящий вход преподавателя и ученика, завершение сессии и запрет доступа к данным другого tenant/ученика.
+
+SQL-набор `supabase/tests/rls.sql` запускается на локальном Supabase и проверяет межпользовательскую, межтенантную и Storage-изоляцию. Тот же набор запускается отдельной CI-задачей после применения всех миграций и seed.
 
 ## Развёртывание
 
@@ -83,8 +86,14 @@ supabase functions deploy create-student
 supabase functions deploy manage-student
 ```
 
+Задайте секрет разрешённого origin для обеих функций:
+
+```powershell
+supabase secrets set ALLOWED_ORIGIN=https://eclipse-math.netlify.app
+```
+
 5. В настройках Supabase Auth отключите public signup и задайте Site URL production-домена.
-6. Добавьте `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY` в Vercel, затем выполните `pnpm build` с output directory `dist`.
+6. Добавьте `VITE_SUPABASE_URL` и `VITE_SUPABASE_ANON_KEY` в Netlify. Build command: `pnpm build`, publish directory: `dist`. SPA-маршруты настроены в `netlify.toml`.
 7. Создайте первого owner/teacher через защищённую административную процедуру или одноразовый SQL в Dashboard; production seed не запускайте.
 
 ## Scheduled jobs
@@ -111,3 +120,5 @@ Jobs должны вызывать SQL-функции или Edge Function с с
 - Нет платежей, публичной регистрации, сообщений, AI/OCR, email/SMS/push и встроенных видеозвонков — это намеренно исключено планом.
 - HEIC конвертируется в браузере для просмотра, оригинал предназначен для отдельного приватного upload.
 - Для запуска полной backend-интеграции нужен Supabase-проект или Docker Desktop.
+- Напоминания по дедлайнам и урокам требуют отдельно включённых Supabase Cron jobs; SQL-расписание зависит от выбранного production-плана.
+- Перед production-релизом необходимо выполнить локальные multi-user RLS/Storage integration tests на Docker Supabase и smoke-проверку Edge Functions с production origin.

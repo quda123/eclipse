@@ -5,7 +5,9 @@ export const internalEmail = (username: string) => `${usernameSchema.parse(usern
 
 export async function signInWithUsername(username: string, password: string) {
   if (!supabase) throw new Error('Supabase не настроен. Заполните VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY.')
-  const { data, error } = await supabase.auth.signInWithPassword({ email: internalEmail(username), password })
+  const value = username.normalize('NFKC').trim().toLocaleLowerCase('ru-RU')
+  const email = value.includes('@') ? value : internalEmail(value)
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error) throw new Error('Неверный логин или пароль')
   const { data: profile, error: profileError } = await supabase.from('profiles').select('id,status,must_change_password,active_organization_id').eq('id', data.user.id).single()
   if (profileError || profile?.status !== 'active') { await supabase.auth.signOut(); throw new Error('Аккаунт недоступен') }

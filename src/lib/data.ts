@@ -271,6 +271,10 @@ export type AssignmentCard = {
   deadlineAt: string;
   status: string;
   mode: string;
+  teacherId?: string;
+  teacherName?: string;
+  organizationName?: string;
+  subject?: string;
 };
 const demoAssignments: AssignmentCard[] = [
   {
@@ -326,6 +330,10 @@ async function fetchAssignments(): Promise<AssignmentCard[]> {
     mode: string;
     status: string;
     effective_deadline: string;
+    teacher_id: string;
+    teacher_name: string;
+    organization_name: string;
+    subject: string;
   }) => {
     const deadlineAt = row.effective_deadline;
     const status =
@@ -348,6 +356,10 @@ async function fetchAssignments(): Promise<AssignmentCard[]> {
       deadlineAt,
       status,
       mode: row.mode ?? "automatic",
+      teacherId: row.teacher_id,
+      teacherName: row.teacher_name,
+      organizationName: row.organization_name,
+      subject: row.subject,
     };
   });
 }
@@ -362,6 +374,10 @@ export type LessonCard = {
   studentName: string;
   status: string;
   zoomUrl: string | null;
+  teacherId?: string;
+  teacherName?: string;
+  organizationName?: string;
+  subject?: string;
 };
 async function fetchLessons(fromIso?: string, toIso?: string): Promise<LessonCard[]> {
   if (!supabase) return [];
@@ -369,36 +385,15 @@ async function fetchLessons(fromIso?: string, toIso?: string): Promise<LessonCar
   if (!fromIso) from.setHours(0, 0, 0, 0);
   const to = toIso ? new Date(toIso) : new Date(from);
   if (!toIso) to.setDate(to.getDate() + 14);
-  const { data, error } = await supabase
-    .from("lessons")
-    .select(
-      "id,series_id,starts_at,ends_at,status,zoom_url,profiles!lessons_student_id_fkey(first_name,last_name)",
-    )
-    .gte("starts_at", from.toISOString())
-    .lt("starts_at", to.toISOString())
-    .order("starts_at");
+  const { data, error } = await supabase.rpc("lesson_cards", { p_from: from.toISOString(), p_to: to.toISOString() });
   if (error) throw error;
-  return (data ?? []).map((row) => {
-    const profile = Array.isArray(row.profiles)
-      ? row.profiles[0]
-      : row.profiles;
-    return {
-      id: row.id,
-      seriesId: row.series_id,
-      startsAt: row.starts_at,
-      endsAt: row.ends_at,
-      studentName: profile
-        ? `${profile.first_name} ${profile.last_name}`
-        : "Ученик",
-      status: row.status,
-      zoomUrl: row.zoom_url,
-    };
-  });
+  return (data ?? []) as LessonCard[];
 }
 export const useLessons = (from?: string, to?: string) =>
   useQuery({
     queryKey: ["lessons", from ?? "default", to ?? "default"],
     queryFn: () => fetchLessons(from, to),
+    placeholderData: (previous) => previous,
   });
 export async function createLesson(input: {
   studentId: string;
@@ -537,6 +532,35 @@ async function fetchCurrentProfile(): Promise<CurrentProfile> {
 export const useCurrentProfile = () =>
   useQuery({ queryKey: ["current-profile"], queryFn: fetchCurrentProfile });
 
+export type StudentInvitation = { id: string; status: "pending" | "accepted" | "expired" | "revoked"; subject: string; createdAt: string; expiresAt: string; acceptedBy: string | null };
+export async function createStudentInvitation(subject = "Математика") {
+  if (!supabase) throw new Error("Supabase не настроен");
+  const { data, error } = await supabase.rpc("create_student_invitation", { p_subject: subject, p_days: 7 });
+  if (error) throw error;
+  return data as { id: string; token: string; expiresAt: string };
+}
+async function fetchStudentInvitations(): Promise<StudentInvitation[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("list_student_invitations");
+  if (error) throw error;
+  return data as StudentInvitation[];
+}
+export const useStudentInvitations = () => useQuery({ queryKey: ["student-invitations"], queryFn: fetchStudentInvitations });
+export async function revokeStudentInvitation(id: string) {
+  if (!supabase) throw new Error("Supabase не настроен");
+  const { error } = await supabase.rpc("revoke_student_invitation", { p_id: id });
+  if (error) throw error;
+}
+
+export type StudentTeacher = { teacherId: string; teacherName: string; organizationName: string; subject: string; status: "active" | "archived"; joinedAt: string };
+async function fetchStudentTeachers(): Promise<StudentTeacher[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("student_teachers");
+  if (error) throw error;
+  return data as StudentTeacher[];
+}
+export const useStudentTeachers = (enabled = true) => useQuery({ queryKey: ["student-teachers"], queryFn: fetchStudentTeachers, enabled });
+
 export type StudentDashboardData = {
   nextLesson: LessonCard | null;
   nextAssignment: AssignmentCard | null;
@@ -551,7 +575,7 @@ export type StudentDashboardData = {
     submittedAt: string;
   }[];
 };
-async function fetchStudentDashboard(): Promise<StudentDashboardData> {
+async function fetchStudentDashboard(teacherId?: string): Promise<StudentDashboardData> {
   if (getDemoRole())
     return {
       nextLesson: null,
@@ -565,12 +589,13 @@ async function fetchStudentDashboard(): Promise<StudentDashboardData> {
   if (!supabase) throw new Error("Supabase не настроен");
   const { data: dashboard, error: dashboardError } = await supabase.rpc(
     "student_dashboard",
+    { p_teacher_id: teacherId || null },
   );
   if (dashboardError) throw dashboardError;
   return dashboard as StudentDashboardData;
 }
-export const useStudentDashboard = () =>
-  useQuery({ queryKey: ["student-dashboard"], queryFn: fetchStudentDashboard });
+export const useStudentDashboard = (teacherId?: string) =>
+  useQuery({ queryKey: ["student-dashboard", teacherId ?? "all"], queryFn: () => fetchStudentDashboard(teacherId) });
 
 export type TeacherDashboardData = {
   teacherName: string;
@@ -1238,6 +1263,11 @@ export async function manageStudent(body: {
   zoomUrl?: string;
 }) {
   if (!supabase) throw new Error("Supabase не настроен");
+  if (body.action === "archive") {
+    const { error } = await supabase.rpc("archive_teacher_student_link", { p_student: body.studentId });
+    if (error) throw error;
+    return { ok: true, actionCompleted: true, auditRecorded: true, warning: "Обучение завершено. Аккаунт ученика сохранён." };
+  }
   const { data, error } = await supabase.functions.invoke("manage-student", {
     body,
   });

@@ -37,6 +37,7 @@ import { usernameSchema } from "./lib/schemas";
 import {
   archiveHomework,
   createHomework,
+  createStudentInvitation,
   createLesson,
   deleteHomeworkDraft,
   extendDeadline,
@@ -45,6 +46,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
   returnSubmission,
+  revokeStudentInvitation,
   saveAttemptDraft,
   saveHomeworkDraft,
   saveHomeworkTemplate,
@@ -65,6 +67,8 @@ import {
   useNotifications,
   useReviewQueue,
   useStudentAnalytics,
+  useStudentInvitations,
+  useStudentTeachers,
   useStudents,
   useSubmissionDetail,
   useTeacherNote,
@@ -254,6 +258,7 @@ const studentNav = [
   [Home, "Главная", "/student"],
   [BookOpenCheck, "Задания", "/student/homework"],
   [CalendarDays, "Календарь", "/student/calendar"],
+  [UsersRound, "Мои преподаватели", "/student/teachers"],
   [Bell, "Уведомления", "/student/notifications"],
   [CircleUserRound, "Профиль", "/student/profile"],
 ] as const;
@@ -266,6 +271,25 @@ export function PortalLayout({ role }: { role: Role }) {
   const [logoutError, setLogoutError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const nav = role === "teacher" ? teacherNav : studentNav;
+  const logout = async () => {
+    setLogoutError("");
+    setLoggingOut(true);
+    try {
+      if (supabase && !getDemoRole()) {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+      }
+      clearDemoRole();
+      sessionStorage.setItem("eclipse:signed-out", "1");
+      queryClient.clear();
+      Object.keys(localStorage).filter((key) => key.startsWith("eclipse-attempt:")).forEach((key) => localStorage.removeItem(key));
+      navigate("/login", { replace: true });
+    } catch {
+      setLogoutError("Не удалось выйти. Попробуйте ещё раз.");
+    } finally {
+      setLoggingOut(false);
+    }
+  };
   useEffect(() => {
     document.getElementById("main")?.focus();
   }, [location.pathname]);
@@ -289,27 +313,7 @@ export function PortalLayout({ role }: { role: Role }) {
         <button
           className="sidebar-logout"
           disabled={loggingOut}
-          onClick={async () => {
-            setLogoutError("");
-            setLoggingOut(true);
-            try {
-              if (supabase && !getDemoRole()) {
-                const { error } = await supabase.auth.signOut();
-                if (error) throw error;
-              }
-              clearDemoRole();
-              sessionStorage.setItem("eclipse:signed-out", "1");
-              queryClient.clear();
-              Object.keys(localStorage)
-                .filter((key) => key.startsWith("eclipse-attempt:"))
-                .forEach((key) => localStorage.removeItem(key));
-              navigate("/login", { replace: true });
-            } catch {
-              setLogoutError("Не удалось выйти. Попробуйте ещё раз.");
-            } finally {
-              setLoggingOut(false);
-            }
-          }}
+          onClick={logout}
         >
           <LogOut size={18} /> {loggingOut ? "Выходим…" : "Выйти"}
         </button>
@@ -332,6 +336,7 @@ export function PortalLayout({ role }: { role: Role }) {
               <i>{notifications.filter((item) => !item.readAt).length}</i>
             )}
           </Link>
+          <button className="mobile-logout" aria-label="Выйти" disabled={loggingOut} onClick={logout}><LogOut size={18} /></button>
         </header>
         <main id="main" tabIndex={-1} className="portal-content">
           <Outlet />
@@ -515,9 +520,7 @@ export function StudentsPage() {
   const [q, setQ] = useState("");
   const [classFilter, setClassFilter] = useState("Все классы");
   const { data = [], isLoading, error } = useStudents();
-  const [created, setCreated] = useState<StudentCard[]>([]);
-  const students = [...data, ...created];
-  const [creating, setCreating] = useState(false);
+  const students = data;
   const classes = ["Все классы", ...new Set(students.map((s) => s.className))];
   const shown = students.filter(
     (s) =>
@@ -530,9 +533,7 @@ export function StudentsPage() {
         eyebrow="УЧЕНИКИ"
         title="Каждый прогресс — личный."
         action={
-          <button className="button" onClick={() => setCreating(true)}>
-            <Plus size={17} /> Добавить ученика
-          </button>
+          <a className="button" href="#invitations"><Plus size={17} /> Пригласить ученика</a>
         }
       />
       <div className="student-filters">
@@ -586,20 +587,50 @@ export function StudentsPage() {
           Ученики не найдены. Измените поиск или фильтр.
         </section>
       )}
-      {creating && (
-        <CreateStudent
-          onClose={() => setCreating(false)}
-          onCreated={(student) => {
-            setCreated([...created, student]);
-            setCreating(false);
-          }}
-        />
-      )}
+      <InvitationsPanel />
     </>
   );
 }
 
-function CreateStudent({
+function InvitationsPanel() {
+  const queryClient = useQueryClient();
+  const { data = [], isLoading } = useStudentInvitations();
+  const [subject, setSubject] = useState("Математика");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [links, setLinks] = useState<Record<string,string>>(() => {
+    try { return JSON.parse(sessionStorage.getItem("eclipse:invitation-links") ?? "{}"); } catch { return {}; }
+  });
+  const saveLink = (id: string, token: string) => {
+    const next = { ...links, [id]: `${location.origin}/invite/${token}` };
+    setLinks(next); sessionStorage.setItem("eclipse:invitation-links", JSON.stringify(next));
+  };
+  const labels = { pending: "Ожидает принятия", accepted: "Принято", expired: "Просрочено", revoked: "Отозвано" };
+  return <section className="panel invitations-panel" id="invitations">
+    <div className="panel-head"><h2>Приглашения</h2></div>
+    <div className="invitation-create"><label>Предмет<input value={subject} maxLength={80} onChange={(event) => setSubject(event.target.value)} /></label><button className="button" disabled={busy || !subject.trim()} onClick={async () => {
+      setBusy(true); setMessage("");
+      try { const created = await createStudentInvitation(subject); saveLink(created.id, created.token); await queryClient.invalidateQueries({ queryKey: ["student-invitations"] }); setMessage("Персональная ссылка создана. Скопируйте и отправьте её ученику."); }
+      catch { setMessage("Не удалось создать приглашение."); }
+      finally { setBusy(false); }
+    }}>{busy ? "Создаём…" : "Создать ссылку"}</button></div>
+    {message && <p role="status">{message}</p>}
+    {isLoading ? <p>Загрузка приглашений…</p> : <div className="invitation-list">{data.map((item) => <article key={item.id}>
+      <div><strong>{labels[item.status]}</strong><span>{item.subject} · создано {new Date(item.createdAt).toLocaleDateString("ru-RU")}</span><small>Действует до {new Date(item.expiresAt).toLocaleString("ru-RU")}{item.acceptedBy ? ` · ${item.acceptedBy}` : ""}</small></div>
+      {item.status === "pending" && <div className="invitation-actions">{links[item.id] && <button className="button secondary" onClick={async () => { await navigator.clipboard.writeText(links[item.id]); setMessage("Ссылка скопирована"); }}>Скопировать</button>}<button className="button danger" onClick={async () => { await revokeStudentInvitation(item.id); await queryClient.invalidateQueries({ queryKey: ["student-invitations"] }); }}>Отозвать</button></div>}
+    </article>)}</div>}
+  </section>;
+}
+
+export function StudentTeachersPage() {
+  const { data = [], isLoading, error } = useStudentTeachers();
+  return <><PageTitle eyebrow="СВЯЗИ" title="Мои преподаватели." /><section className="teacher-cards">
+    {isLoading && <p>Загрузка…</p>}{error && <p className="form-error">Не удалось загрузить преподавателей.</p>}
+    {data.map((item) => <article className="panel" key={`${item.teacherId}-${item.organizationName}`}><h2>{item.teacherName}</h2><p>{item.subject}</p><p>{item.organizationName}</p><small>{item.status === "active" ? "Активная связь" : "Обучение завершено"} · с {new Date(item.joinedAt).toLocaleDateString("ru-RU")}</small></article>)}
+  </section></>;
+}
+
+export function CreateStudent({
   onClose,
   onCreated,
 }: {
@@ -927,14 +958,12 @@ export function StudentDetail() {
               try {
                 const result = await manageStudent({
                   studentId: s.id,
-                  action: s.status === "archived" ? "restore" : "archive",
+                  action: "archive",
                 });
                 await queryClient.invalidateQueries({ queryKey: ["students"] });
                 setAccountMessage(
                   result.warning ??
-                    (s.status === "archived"
-                      ? "Аккаунт восстановлен."
-                      : "Аккаунт архивирован."),
+                    "Обучение завершено. Аккаунт ученика сохранён.",
                 );
               } catch {
                 setAccountMessage("Не удалось изменить статус.");
@@ -943,7 +972,7 @@ export function StudentDetail() {
               }
             }}
           >
-            {s.status === "archived" ? "Восстановить" : "Архивировать"}
+            Завершить обучение
           </button>
           {s.username && (
             <button
@@ -1168,14 +1197,16 @@ function TeacherNotes({ studentId }: { studentId: string }) {
 }
 
 export function HomeworkList({ student = false }: { student?: boolean }) {
+  const [teacherFilter, setTeacherFilter] = useState("all");
   const {
     data: assignments = [],
     isLoading,
     error,
     refetch,
   } = useAssignments();
+  const teachers = [...new Map(assignments.filter((item) => item.teacherId).map((item) => [item.teacherId!, item.teacherName ?? "Преподаватель"])).entries()];
   const visible = student
-    ? assignments
+    ? assignments.filter((item) => teacherFilter === "all" || item.teacherId === teacherFilter)
     : [...new Map(assignments.map((item) => [item.homeworkId, item])).values()];
   return (
     <>
@@ -1190,6 +1221,7 @@ export function HomeworkList({ student = false }: { student?: boolean }) {
           ) : undefined
         }
       />
+      {student && teachers.length > 1 && <div className="student-filters"><select aria-label="Фильтр по преподавателю" value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="all">Все преподаватели</option>{teachers.map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select></div>}
       <section className="homework-list">
         {isLoading && <p role="status">Загрузка заданий…</p>}
         {error && (
@@ -1207,6 +1239,9 @@ export function HomeworkList({ student = false }: { student?: boolean }) {
             topic={item.topic}
             due={item.deadline}
             status={item.status}
+            teacher={student ? item.teacherName : undefined}
+            organization={student ? item.organizationName : undefined}
+            subject={student ? item.subject : undefined}
             href={
               student
                 ? item.mode === "manual"
@@ -1229,18 +1264,25 @@ function HomeworkRow({
   due,
   status,
   href,
+  teacher,
+  organization,
+  subject,
 }: {
   title: string;
   topic: string;
   due: string;
   status: string;
   href: string;
+  teacher?: string;
+  organization?: string;
+  subject?: string;
 }) {
   return (
     <Link className="homework-row" to={href}>
       <div>
         <span className="badge">{topic}</span>
         <h2>{title}</h2>
+        {teacher && <p>{teacher} · {subject} · {organization}</p>}
         <p>Сдать до {due}</p>
       </div>
       <span className={`status-badge ${status === "Просрочено" ? "bad" : ""}`}>

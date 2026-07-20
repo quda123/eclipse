@@ -5,9 +5,11 @@ import interactionPlugin from "@fullcalendar/interaction";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router-dom";
-import { updateLesson, updateLessonSeries, useLessons } from "./lib/data";
+import { updateLesson, updateLessonSeries, useLessons, useStudentTeachers } from "./lib/data";
 
 export default function CalendarBoard() {
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
+  const [teacherFilter, setTeacherFilter] = useState("all");
   const [visibleRange, setVisibleRange] = useState(() => {
     const start = new Date();
     start.setDate(start.getDate() - 7);
@@ -20,6 +22,9 @@ export default function CalendarBoard() {
     visibleRange.end,
   );
   const teacher = useLocation().pathname.startsWith("/teacher");
+  const { data: studentTeachers = [] } = useStudentTeachers(!teacher);
+  const teacherOptions = teacher ? [] : studentTeachers.filter((item) => item.status === "active").map((item) => [item.teacherId, item.teacherName] as const);
+  const visibleLessons = teacher ? lessons : lessons.filter((lesson) => teacherFilter === "all" || lesson.teacherId === teacherFilter);
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null),
     [startsAt, setStartsAt] = useState(""),
@@ -30,6 +35,7 @@ export default function CalendarBoard() {
       "occurrence",
     );
   const selectedLesson = lessons.find((lesson) => lesson.id === selected);
+  const selectedTeacher = studentTeachers.find((item) => item.teacherId === selectedLesson?.teacherId);
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: ["lessons"] });
   const changeStatus = async (
@@ -62,14 +68,16 @@ export default function CalendarBoard() {
     );
   return (
     <div className="calendar-board">
+      {!teacher && teacherOptions.length > 1 && <div className="calendar-filter"><select aria-label="Фильтр календаря по преподавателю" value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="all">Все преподаватели</option>{teacherOptions.map(([id,name]) => <option key={id} value={id}>{name}</option>)}</select></div>}
       <FullCalendar
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
         initialView="timeGridWeek"
+        initialDate={calendarDate}
         locale="ru"
         firstDay={1}
         height="auto"
-        slotMinTime="14:00:00"
-        slotMaxTime="21:00:00"
+        slotMinTime="08:00:00"
+        slotMaxTime="22:00:00"
         allDaySlot={false}
         headerToolbar={{
           left: "prev,next today",
@@ -77,18 +85,24 @@ export default function CalendarBoard() {
           right: "dayGridMonth,timeGridWeek",
         }}
         buttonText={{ today: "Сегодня", month: "Месяц", week: "Неделя" }}
-        datesSet={({ start, end }) =>
-          setVisibleRange({ start: start.toISOString(), end: end.toISOString() })
-        }
-        events={lessons.map((lesson) => ({
+        datesSet={({ start, end, view }) => {
+          setCalendarDate(view.currentStart);
+          setVisibleRange({ start: start.toISOString(), end: end.toISOString() });
+        }}
+        events={visibleLessons.map((lesson) => ({
           id: lesson.id,
-          title: `${lesson.studentName || "Математика"}${lesson.status === "cancelled" ? " · Отменено" : lesson.status === "moved" ? " · Перенесено" : ""}`,
+          title: teacher ? lesson.studentName : studentTeachers.find((item) => item.teacherId === lesson.teacherId)?.teacherName || "Преподаватель",
           start: lesson.startsAt,
           end: lesson.endsAt,
           classNames: [`lesson-${lesson.status}`],
+          extendedProps: { subject: studentTeachers.find((item) => item.teacherId === lesson.teacherId)?.subject || "Занятие", status: lesson.status },
         }))}
+        eventContent={({ event }) => <><span>{teacher ? "" : `${event.extendedProps.subject} · `}</span><span>{event.title}</span>{event.extendedProps.status === "cancelled" ? <span> · Отменено</span> : event.extendedProps.status === "moved" ? <span> · Перенесено</span> : null}</>}
         eventClick={({ event }) => {
-          if (!teacher) return;
+          if (!teacher) {
+            setSelected(event.id);
+            return;
+          }
           setSelected(event.id);
           setScope("occurrence");
           setStartsAt(
@@ -112,6 +126,7 @@ export default function CalendarBoard() {
           );
         }}
       />
+      {!teacher && selectedLesson && <section className="panel calendar-lesson-details" aria-live="polite"><div><p className="eyebrow">ЗАНЯТИЕ</p><h2>{selectedTeacher?.subject || "Занятие"}</h2><p>{selectedTeacher?.teacherName} · {selectedTeacher?.organizationName}</p><p>{new Date(selectedLesson.startsAt).toLocaleString("ru-RU", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</p></div><div className="sticky-actions">{selectedLesson.zoomUrl && /^https:\/\//i.test(selectedLesson.zoomUrl) && <a className="button" href={selectedLesson.zoomUrl} target="_blank" rel="noreferrer">Открыть видеоурок</a>}<button type="button" className="button secondary" onClick={() => setSelected(null)}>Закрыть</button></div></section>}
       {teacher && selected && (
         <form
           className="panel form-panel"

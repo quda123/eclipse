@@ -1,5 +1,5 @@
 import { ArrowRight, ChevronRight, LockKeyhole } from "lucide-react";
-import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   lazy,
   Suspense,
@@ -14,7 +14,7 @@ import { getDemoRole, setDemoRole } from "./lib/demo";
 import { supabase } from "./lib/supabase";
 import { SeamlessBackgroundVideo } from "./SeamlessBackgroundVideo";
 import { ProductShowcases } from "./ProductShowcases";
-import { useCurrentProfile, useStudentDashboard } from "./lib/data";
+import { useCurrentProfile, useStudentDashboard, useStudentTeachers } from "./lib/data";
 import "./App.css";
 const portalComponent = <K extends keyof typeof import("./Portal")>(name: K) =>
   lazy(() => import("./Portal").then((module) => ({ default: module[name] })));
@@ -27,6 +27,7 @@ const PortalLayout = portalComponent("PortalLayout");
 const ReviewPage = portalComponent("ReviewPage");
 const SimplePage = portalComponent("SimplePage");
 const StudentDetail = portalComponent("StudentDetail");
+const StudentTeachersPage = portalComponent("StudentTeachersPage");
 const StudentsPage = portalComponent("StudentsPage");
 const TeacherDashboard = portalComponent("TeacherDashboard");
 const TestAttempt = portalComponent("TestAttempt");
@@ -129,6 +130,7 @@ function Landing() {
 
 function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -148,8 +150,9 @@ function Login() {
               String(form.get("username")),
               String(form.get("password")),
             );
+            const returnTo = searchParams.get("returnTo");
             navigate(
-              session.profile.must_change_password
+              returnTo?.startsWith("/invite/") ? returnTo : session.profile.must_change_password
                 ? "/change-password"
                 : session.role === "student"
                   ? "/student"
@@ -167,14 +170,14 @@ function Login() {
         <LockKeyhole size={20} />
         <p className="eyebrow">ВХОД В ПРОСТРАНСТВО</p>
         <h1>С возвращением.</h1>
-        <p>Введите логин и пароль, которые дал преподаватель.</p>
+        <p>Введите логин или электронную почту и пароль для входа.</p>
         <label>
-          Логин
+          Логин или email
           <input
             name="username"
             autoComplete="username"
             required
-            placeholder="например, ivan.petrov"
+            placeholder="Введите логин или email"
           />
         </label>
         <label>
@@ -222,6 +225,112 @@ function Login() {
   );
 }
 
+async function invitationHash(token: string) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(bytes), (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+type InvitationInfo = { state: "pending" | "accepted" | "expired" | "revoked" | "not_found"; teacherName?: string; organizationName?: string; subject?: string; expiresAt?: string };
+
+function InvitePage() {
+  const { token = "" } = useParams();
+  const navigate = useNavigate();
+  const [info, setInfo] = useState<InvitationInfo | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [mode, setMode] = useState<"choice" | "register">("choice");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!supabase || !token) return setInfo({ state: "not_found" });
+      const hash = await invitationHash(token);
+      const [{ data, error: loadError }, { data: auth }] = await Promise.all([
+        supabase.rpc("inspect_student_invitation", { p_token_hash: hash }),
+        supabase.auth.getUser(),
+      ]);
+      if (active) {
+        setInfo(loadError ? { state: "not_found" } : data as InvitationInfo);
+        setAuthenticated(Boolean(auth.user));
+      }
+    })();
+    return () => { active = false; };
+  }, [token]);
+  const accept = async () => {
+    if (!supabase) return;
+    setBusy(true); setError("");
+    const { data, error: acceptError } = await supabase.rpc("accept_student_invitation", { p_token_hash: await invitationHash(token) });
+    setBusy(false);
+    if (acceptError) {
+      const message = acceptError.message;
+      setError(message.includes("teacher_cannot_accept") ? "Аккаунт преподавателя нельзя подключить как ученика." : message.includes("already_connected") ? "Вы уже подключены к этому преподавателю." : "Не удалось принять приглашение.");
+      return;
+    }
+    setNotice(`Вы присоединились к преподавателю ${data.teacherName}.`);
+    setTimeout(() => navigate("/student", { replace: true }), 700);
+  };
+  if (!info) return <main className="invite-page"><section className="invite-card">Проверяем приглашение…</section></main>;
+  if (info.state !== "pending") {
+    const states = { accepted: "Это приглашение уже принято.", expired: "Срок действия приглашения истёк.", revoked: "Приглашение отозвано преподавателем.", not_found: "Приглашение не найдено." };
+    return <main className="invite-page"><section className="invite-card"><Link className="logo" to="/">Eclipse<sup>®</sup></Link><h1>Приглашение недоступно</h1><p>{states[info.state]}</p><Link className="button" to="/login">Перейти ко входу</Link></section></main>;
+  }
+  return <main className="invite-page"><section className="invite-card">
+    <Link className="logo" to="/">Eclipse<sup>®</sup></Link>
+    <p className="eyebrow">ПЕРСОНАЛЬНОЕ ПРИГЛАШЕНИЕ</p>
+    <h1>{info.teacherName} приглашает вас присоединиться</h1>
+    <p>к пространству «{info.organizationName}» · {info.subject}.</p>
+    {info.expiresAt && <small>Действует до {new Date(info.expiresAt).toLocaleString("ru-RU")}</small>}
+    {notice && <p className="form-success" role="status">{notice}</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {authenticated ? <button className="button" disabled={busy} onClick={accept}>{busy ? "Подключаем…" : "Принять приглашение"}</button> : mode === "choice" ? <div className="invite-actions">
+      <button className="button" onClick={() => setMode("register")}>Создать аккаунт</button>
+      <Link className="button secondary" to={`/login?returnTo=${encodeURIComponent(`/invite/${token}`)}`}>Уже есть аккаунт? Войти</Link>
+    </div> : <InviteRegistration token={token} teacherName={info.teacherName ?? "преподавателю"} onError={setError} />}
+  </section></main>;
+}
+
+function InviteRegistration({ token, teacherName, onError }: { token: string; teacherName: string; onError: (value: string) => void }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  return <form className="invite-form" onSubmit={async (event) => {
+    event.preventDefault(); onError("");
+    const form = new FormData(event.currentTarget); const password = String(form.get("password"));
+    if (password !== String(form.get("confirmation"))) return onError("Пароли не совпадают.");
+    if (password.length < 8) return onError("Пароль должен содержать не менее 8 символов.");
+    if (!supabase) return onError("Supabase не настроен.");
+    setBusy(true);
+    const email = String(form.get("email")).trim().toLocaleLowerCase("ru-RU");
+    const username = String(form.get("username")).trim().toLocaleLowerCase("ru-RU");
+    const tokenHash = await invitationHash(token);
+    const { data: conflict, error: conflictError } = await supabase.rpc("invitation_registration_conflict", { p_token_hash: tokenHash, p_email: email, p_username: username });
+    if (conflictError || conflict) {
+      setBusy(false);
+      onError(conflict === "email_registered" ? "Этот адрес электронной почты уже зарегистрирован. Войдите в существующий аккаунт, чтобы принять приглашение." : conflict === "username_taken" ? "Этот логин уже занят. Выберите другой." : "Приглашение больше недоступно.");
+      return;
+    }
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${location.origin}/invite/${token}`, data: {
+      invitation_token_hash: tokenHash, username, first_name: String(form.get("firstName")).trim(), last_name: String(form.get("lastName")).trim()
+    } } });
+    setBusy(false);
+    if (error) {
+      const text = error.message.toLowerCase();
+      onError(text.includes("username") || text.includes("duplicate key") ? "Этот логин уже занят. Выберите другой." : text.includes("already") || text.includes("registered") ? "Этот адрес электронной почты уже зарегистрирован. Войдите в существующий аккаунт, чтобы принять приглашение." : "Не удалось создать аккаунт. Проверьте введённые данные.");
+      return;
+    }
+    if (data.session) navigate("/student", { replace: true });
+    else onError(`Проверьте почту и подтвердите адрес. После входа приглашение ${teacherName} уже будет принято.`);
+  }}>
+    <div className="invite-name-row"><label>Имя<input name="firstName" required maxLength={80} /></label><label>Фамилия<input name="lastName" required maxLength={80} /></label></div>
+    <label>Электронная почта<input name="email" type="email" autoComplete="email" required /></label>
+    <label>Логин<input name="username" autoComplete="username" required minLength={3} maxLength={40} pattern="[A-Za-zА-Яа-яЁё0-9_.-]+" /></label>
+    <label>Пароль<input name="password" type="password" autoComplete="new-password" required minLength={8} /></label>
+    <label>Повторите пароль<input name="confirmation" type="password" autoComplete="new-password" required minLength={8} /></label>
+    <p className="password-help">Не менее 8 символов. Используйте буквы, цифры и специальный знак.</p>
+    <button className="button" disabled={busy}>{busy ? "Создаём аккаунт…" : "Создать аккаунт"}</button>
+  </form>;
+}
+
 function RoleGuard({
   role,
   children,
@@ -256,6 +365,10 @@ function RoleGuard({
       return;
     }
     currentRole()
+      .catch(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return currentRole();
+      })
       .then((value) => {
         if (!active) return;
         if (value === "archived") setMessage("Аккаунт архивирован");
@@ -407,12 +520,14 @@ function ChangePassword() {
 }
 
 function StudentDashboard() {
+  const [teacherFilter, setTeacherFilter] = useState("all");
   const {
     data: profile,
     isLoading: profileLoading,
     error: profileError,
   } = useCurrentProfile();
-  const { data, isLoading, error } = useStudentDashboard();
+  const { data: teachers = [] } = useStudentTeachers();
+  const { data, isLoading, error } = useStudentDashboard(teacherFilter === "all" ? undefined : teacherFilter);
   if (profileLoading || isLoading)
     return (
       <section className="panel empty" role="status">
@@ -447,6 +562,7 @@ function StudentDashboard() {
           <em>сделать важное.</em>
         </h1>
       </header>
+      {teachers.length > 1 && <div className="student-filters dashboard-filter"><label>Преподаватель<select aria-label="Фильтр кабинета по преподавателю" value={teacherFilter} onChange={(event) => setTeacherFilter(event.target.value)}><option value="all">Все преподаватели</option>{teachers.map((teacher) => <option key={teacher.teacherId} value={teacher.teacherId}>{teacher.teacherName}</option>)}</select></label></div>}
       <section className="dashboard-grid">
         <article className="next-lesson">
           <p className="eyebrow">БЛИЖАЙШЕЕ ЗАНЯТИЕ</p>
@@ -455,7 +571,7 @@ function StudentDashboard() {
               <h2>
                 {lesson.status === "moved"
                   ? "Занятие перенесено"
-                  : "Математика"}
+                  : lesson.subject || "Занятие"}
               </h2>
               <p>
                 {lessonStart.toLocaleString("ru-RU", {
@@ -467,6 +583,7 @@ function StudentDashboard() {
                 })}{" "}
                 · {duration} минут
               </p>
+              <p>{lesson.teacherName} · {lesson.organizationName}</p>
               {lesson.zoomUrl && /^https:\/\//i.test(lesson.zoomUrl) && (
                 <a
                   className="cta"
@@ -474,7 +591,7 @@ function StudentDashboard() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Подключиться к Zoom <ArrowRight size={18} />
+                  Подключиться к видеоуроку <ArrowRight size={18} />
                 </a>
               )}
             </>
@@ -492,6 +609,7 @@ function StudentDashboard() {
           {assignment ? (
             <>
               <h2>{assignment.title}</h2>
+              <p>{assignment.teacherName} · {assignment.subject} · {assignment.organizationName}</p>
               <p>Сдать до {assignment.deadline}</p>
               <Link
                 to={
@@ -539,6 +657,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/invite/:token" element={<InvitePage />} />
         <Route
           path="/teacher"
           element={
@@ -580,6 +699,7 @@ export default function App() {
             element={<PhotoSubmission />}
           />
           <Route path="calendar" element={<CalendarPage />} />
+          <Route path="teachers" element={<StudentTeachersPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="profile" element={<SimplePage title="Ваш профиль" />} />
         </Route>

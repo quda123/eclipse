@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .netlify-token
 supabase/.temp/
+supabase/.branches/
 output/
 test-results/
 playwright-report/

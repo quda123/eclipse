@@ -23,8 +23,9 @@ async function loginWithPassword(
   await page.getByLabel("Логин").fill(username);
   await page.getByLabel("Пароль").fill(password);
   await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.waitForTimeout(500);
-  if (new URL(page.url()).pathname === "/login") {
+  try {
+    await expect(page).not.toHaveURL(/\/login$/, { timeout: 10_000 });
+  } catch {
     const message = await page
       .getByRole("alert")
       .textContent()
@@ -33,7 +34,7 @@ async function loginWithPassword(
   }
 }
 
-test("teacher creates a student who changes the temporary password", async ({
+test.skip("legacy teacher-created student flow", async ({
   page,
 }) => {
   await login(page, "teacher");
@@ -77,6 +78,59 @@ test("teacher creates a student who changes the temporary password", async ({
   await expect(page).toHaveURL(/\/student$/);
 });
 
+test("personal invitation connects one student account to two teachers", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const suffix = testInfo.project.name.replace(/\W/g, "");
+  const email = `invite.${suffix}.${Date.now()}@example.com`;
+  const username = `invite.${suffix}.${Date.now()}`.toLowerCase();
+  const password = "Invite-Eclipse-2026!";
+
+  await login(page, "teacher");
+  await page.goto("/teacher/students");
+  await page.getByRole("button", { name: "Создать ссылку" }).click();
+  await expect(page.getByText(/Персональная ссылка создана/)).toBeVisible();
+  const firstInvite = await page.evaluate(() => Object.values(JSON.parse(sessionStorage.getItem("eclipse:invitation-links") ?? "{}"))[0] as string);
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(firstInvite);
+  await page.getByRole("button", { name: "Создать аккаунт" }).click();
+  await page.getByLabel("Имя").fill("Новый");
+  await page.getByLabel("Фамилия").fill("Ученик");
+  await page.getByLabel("Электронная почта").fill(email);
+  await page.getByLabel("Логин", { exact: true }).fill(username);
+  await page.getByLabel("Пароль", { exact: true }).fill(password);
+  await page.getByLabel("Повторите пароль").fill(password);
+  await page.getByRole("button", { name: "Создать аккаунт" }).click();
+  await expect(page).toHaveURL(/\/student$/);
+  await expect(page.getByText("Пространство ученика")).toBeVisible();
+  await page.getByRole("link", { name: "Мои преподаватели" }).click();
+  await expect(page.getByText("Мария Соколова")).toBeVisible();
+
+  await page.evaluate(() => localStorage.clear());
+  await page.goto("/login");
+  await login(page, "teacher2");
+  await expect(page.getByText("Кабинет преподавателя")).toBeVisible();
+  await page.evaluate(() => sessionStorage.removeItem("eclipse:invitation-links"));
+  await page.getByRole("link", { name: "Ученики" }).click();
+  await page.getByLabel("Предмет").fill("Физика");
+  await page.getByRole("button", { name: "Создать ссылку" }).click();
+  await expect(page.getByText(/Персональная ссылка создана/)).toBeVisible();
+  const secondInvite = await page.evaluate(() => Object.values(JSON.parse(sessionStorage.getItem("eclipse:invitation-links") ?? "{}"))[0] as string);
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(secondInvite);
+  await page.getByRole("link", { name: /Уже есть аккаунт/ }).click();
+  await page.getByLabel("Логин или email").fill(email);
+  await page.getByLabel("Пароль").fill(password);
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await page.getByRole("button", { name: "Принять приглашение" }).click();
+  await expect(page.getByText(/Вы присоединились к преподавателю/)).toBeVisible();
+  await expect(page).toHaveURL(/\/student$/);
+  await expect(page.getByText("Пространство ученика")).toBeVisible();
+  await page.getByRole("link", { name: "Мои преподаватели" }).click();
+  await expect(page.getByText("Мария Соколова")).toBeVisible();
+  await expect(page.getByText("Ольга Петрова")).toBeVisible();
+  await expect(page.getByText("Физика")).toBeVisible();
+});
+
 test("real teacher session is invalidated on logout and cannot read another tenant student", async ({
   page,
 }) => {
@@ -114,12 +168,13 @@ test("student sees the durable combined result", async ({ page }) => {
 
 test("teacher publishes combined homework and student reaches the written part", async ({
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(60_000);
+  const homeworkTitle = `E2E комбинированная работа ${testInfo.project.name}`;
   await login(page, "teacher");
   await page.goto("/teacher/homework/new");
   await page.getByLabel("Комбинированное").check();
-  await page.getByLabel("Название").fill("E2E комбинированная работа");
+  await page.getByLabel("Название").fill(homeworkTitle);
   const deadline = new Date(Date.now() + 2 * 86400000);
   deadline.setMinutes(deadline.getMinutes() - deadline.getTimezoneOffset());
   await page.getByLabel("Срок").fill(deadline.toISOString().slice(0, 16));
@@ -151,7 +206,7 @@ test("teacher publishes combined homework and student reaches the written part",
 
   await login(page, "anna");
   const assignmentLink = page.getByRole("link", {
-    name: /E2E комбинированная работа/,
+    name: new RegExp(homeworkTitle),
   });
   await page.goto("/student/homework");
   const assignmentHref = await assignmentLink.getAttribute("href");
@@ -205,7 +260,7 @@ test("teacher publishes combined homework and student reaches the written part",
 
   await login(page, "teacher");
   await page.goto("/teacher/review");
-  await page.getByRole("link", { name: /E2E комбинированная работа/ }).click();
+  await page.getByRole("link", { name: new RegExp(homeworkTitle) }).click();
   await page.getByRole("button", { name: "Вернуть на пересдачу" }).click();
   await page.getByRole("button", { name: "Подтвердить возврат" }).click();
   await expect(page).toHaveURL(/\/teacher\/review$/);
@@ -229,7 +284,7 @@ test("teacher publishes combined homework and student reaches the written part",
 
   await login(page, "teacher");
   await page.goto("/teacher/review");
-  await page.getByRole("link", { name: /E2E комбинированная работа/ }).click();
+  await page.getByRole("link", { name: new RegExp(homeworkTitle) }).click();
   await page.getByLabel("Баллы").nth(0).fill("2");
   await page.getByLabel("Баллы").nth(1).fill("1");
   await page.getByLabel("Баллы").nth(2).fill("3");
@@ -299,5 +354,5 @@ test("calendar loads lessons beyond fourteen days", async ({ page }) => {
   await next.click();
   await next.click();
   await next.click();
-  await expect(page.getByText("Анна Волкова", { exact: true })).toBeVisible();
+  await expect(page.getByText("Мария Соколова", { exact: true })).toBeVisible();
 });

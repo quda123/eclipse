@@ -2,8 +2,10 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true,
-  workers: 2,
+  // Authenticated scenarios share one seeded local database. Serial execution
+  // prevents the desktop and mobile projects from mutating the same fixtures.
+  fullyParallel: false,
+  workers: 1,
   reporter: 'line',
   webServer: {
     command: 'pnpm dev --host 127.0.0.1',
